@@ -1,6 +1,8 @@
-# Venii Local — application Android native (prototype 2.2)
+# Venii Local — application Android native (prototype 2.3)
 
 ## Journal des versions
+
+- **2.3-test (build 5)** : panneau de réglages uniquement en démonstration (aspiration, débit d’eau, mode, volume, horaire fictif), application locale des choix et trace dans l’historique de session. Les options sont illustratives et non validées pour le robot ; aucun nouvel ordre réseau, aucune alarme, aucune programmation réelle. Le panneau est masqué en mode réel.
 
 - **2.2-test (build 4)** : historique horodaté (30 événements en mémoire, effaçables, non persistés), animation de démonstration sans réseau, accès rapide aux commandes, diagnostic local de lecture et erreurs de communication. Les codes de commande et les protections de 2.1 restent inchangés.
 

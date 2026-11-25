@@ -34,7 +34,12 @@ public final class MainActivity extends Activity {
     private Button btnConnect, btnStart, btnPause, btnResume, btnDock;
     private CheckBox repaired, demoMode;
     private TextView connection, state, power, suction, volume, issue, note, telemetrySummary, dashboardMode, dashboardState, historyView, diagnostic, demoStatus;
-    private View robotPreview;
+    private View robotPreview, settingsPanel;
+    private TextView settingsSummary, scheduleLabel;
+    private android.widget.Spinner aspirationChoice, waterChoice, cleaningChoice;
+    private android.widget.SeekBar volumeChoice;
+    private CheckBox scheduleEnabled;
+    private int scheduleHour = 9, scheduleMinute = 0;
     private android.animation.ObjectAnimator demoAnimation;
     private final java.util.ArrayDeque<String> history = new java.util.ArrayDeque<>();
     private volatile boolean working = false;
@@ -158,6 +163,90 @@ public final class MainActivity extends Activity {
         return view;
     }
 
+    private android.widget.Spinner demoChoice(LinearLayout panel, String label, String[] options) {
+        add(panel, text(label, 13, MUTED, true), 12);
+        android.widget.Spinner spinner = new android.widget.Spinner(this);
+        android.widget.ArrayAdapter<String> adapter = new android.widget.ArrayAdapter<String>(this, android.R.layout.simple_spinner_item, options) {
+            @Override public View getView(int position, View convertView, android.view.ViewGroup parent) {
+                View view = super.getView(position, convertView, parent);
+                if (view instanceof TextView) ((TextView)view).setTextColor(PRIMARY);
+                return view;
+            }
+        };
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        spinner.setAdapter(adapter);
+        spinner.setBackgroundTintList(android.content.res.ColorStateList.valueOf(ACCENT));
+        spinner.setPadding(dp(8), dp(8), dp(8), dp(8));
+        add(panel, spinner, 3);
+        return spinner;
+    }
+
+    private String scheduledTime() {
+        return String.format(java.util.Locale.FRANCE, "%02d:%02d", scheduleHour, scheduleMinute);
+    }
+
+    private void updateScheduleLabel() {
+        scheduleLabel.setText("Horaire fictif : " + scheduledTime() + " • " + (scheduleEnabled.isChecked() ? "activé en démo" : "désactivé"));
+    }
+
+    private LinearLayout buildDemoSettings() {
+        LinearLayout section = column(14, CARD);
+        add(section, text("RÉGLAGES EXPÉRIMENTAUX", 12, ACCENT, true), 0);
+        add(section, text("DÉMO UNIQUEMENT • options illustratives, non validées sur le N1 Max. Aucun réglage transmis au robot.", 13, WARNING, true), 8);
+        aspirationChoice = demoChoice(section, "Puissance d’aspiration", new String[]{"Silencieux", "Standard", "Fort", "Maximum"});
+        aspirationChoice.setSelection(1);
+        waterChoice = demoChoice(section, "Débit d’eau", new String[]{"Sans eau", "Faible", "Moyen", "Élevé"});
+        cleaningChoice = demoChoice(section, "Mode de nettoyage", new String[]{"Automatique", "Zone ciblée", "Bordures", "Lavage"});
+        TextView volumeLabel = text("Volume simulé : 50 %", 13, MUTED, true);
+        add(section, volumeLabel, 12);
+        volumeChoice = new android.widget.SeekBar(this);
+        volumeChoice.setMax(100);
+        volumeChoice.setProgress(50);
+        volumeChoice.setProgressTintList(android.content.res.ColorStateList.valueOf(ACCENT));
+        volumeChoice.setThumbTintList(android.content.res.ColorStateList.valueOf(ACCENT));
+        add(section, volumeChoice, 5);
+        volumeChoice.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener() {
+            public void onProgressChanged(android.widget.SeekBar bar, int value, boolean fromUser) { volumeLabel.setText("Volume simulé : " + value + " %"); }
+            public void onStartTrackingTouch(android.widget.SeekBar bar) {}
+            public void onStopTrackingTouch(android.widget.SeekBar bar) {}
+        });
+        scheduleEnabled = new CheckBox(this);
+        scheduleEnabled.setText("Programmer un nettoyage fictif");
+        scheduleEnabled.setTextColor(PRIMARY);
+        scheduleEnabled.setButtonTintList(android.content.res.ColorStateList.valueOf(ACCENT));
+        add(section, scheduleEnabled, 12);
+        scheduleLabel = text("", 13, MUTED, false);
+        add(section, scheduleLabel, 5);
+        updateScheduleLabel();
+        scheduleEnabled.setOnCheckedChangeListener((b, checked) -> updateScheduleLabel());
+        Button time = button("Choisir une heure", Color.rgb(38,60,80), PRIMARY);
+        add(section, time, 8);
+        time.setOnClickListener(v -> {
+            if (!demoMode.isChecked()) return;
+            new android.app.TimePickerDialog(this, (picker, hour, minute) -> {
+                scheduleHour = hour;
+                scheduleMinute = minute;
+                updateScheduleLabel();
+            }, scheduleHour, scheduleMinute, true).show();
+        });
+        add(section, text("Aucune alarme ni tâche automatique n’est créée. Les choix restent dans la session.", 12, MUTED, false), 8);
+        Button apply = button("Appliquer en démonstration", ACCENT, BG);
+        add(section, apply, 12);
+        settingsSummary = text("Aucun réglage de démonstration appliqué.", 13, MUTED, false);
+        add(section, settingsSummary, 8);
+        apply.setOnClickListener(v -> {
+            if (!demoMode.isChecked() || working) return;
+            String summary = "Aspiration : " + aspirationChoice.getSelectedItem()
+                + " • Eau : " + waterChoice.getSelectedItem()
+                + " • Mode : " + cleaningChoice.getSelectedItem()
+                + " • Volume : " + volumeChoice.getProgress() + " %"
+                + " • Horaire fictif : " + (scheduleEnabled.isChecked() ? scheduledTime() : "désactivé");
+            settingsSummary.setText("DÉMO : " + summary);
+            activity("DÉMO : réglages appliqués localement. " + summary + ". Aucun ordre envoyé.");
+        });
+        return section;
+    }
+
     private void buildUi() {
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
@@ -257,6 +346,7 @@ public final class MainActivity extends Activity {
             robotPreview.setVisibility(checked ? View.VISIBLE : View.GONE);
             demoStatus.setVisibility(checked ? View.VISIBLE : View.GONE);
             demoStatus.setText("Simulation : en attente");
+            if (settingsPanel != null) settingsPanel.setVisibility(checked ? View.VISIBLE : View.GONE);
             invalidateStatus("Lecture nécessaire");
             repaired.setChecked(false);
             dashboardMode.setText(checked ? "DÉMONSTRATION • aucune commande réelle" : "MODE RÉEL • commandes directes");
@@ -284,6 +374,10 @@ public final class MainActivity extends Activity {
         btnDock.setOnClickListener(v -> { if (demoMode.isChecked()) simulate(1050, "Retour à la base"); else sendUnverified(1050, "Retour à la base"); });
         add(controls, text("Les codes 1050, 1060 et 1070 restent à valider sur votre robot. Le mode réel demande un état récent et votre vérification physique. Un appui envoie directement un seul ordre : restez près du bouton physique du robot.", 12, MUTED, false), 12);
 
+        LinearLayout settings = buildDemoSettings();
+        settingsPanel = settings;
+        add(main, settings, 12);
+
         LinearLayout logs = column(18, CARD);
         add(main, logs, 12);
         add(logs, text("ACTIVITÉ", 12, ACCENT, true), 0);
@@ -308,6 +402,7 @@ public final class MainActivity extends Activity {
         LinearLayout changes = column(18, CARD);
         add(main, changes, 16);
         add(changes, text("VERSION " + appVersion(), 12, ACCENT, true), 0);
+        add(changes, text("2.3 • Réglages de démonstration : aspiration, eau, mode, volume et horaire fictif.", 13, PRIMARY, false), 8);
         add(changes, text("2.2 • Historique horodaté, animation démo, accès rapide et diagnostic local.", 13, PRIMARY, false), 8);
         add(changes, text("2.1 • Tableau de bord, version visible, contrôle de fraîcheur des données.", 13, PRIMARY, false), 8);
         add(changes, text("2.0 • Commandes directes sans confirmation, mode démo et lecture d’état.", 12, MUTED, false), 6);
