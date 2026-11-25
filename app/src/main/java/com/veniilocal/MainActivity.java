@@ -1,7 +1,6 @@
 package com.veniilocal;
 
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.content.Context;
 import android.content.Intent;
 import android.net.ConnectivityManager;
@@ -34,9 +33,13 @@ public final class MainActivity extends Activity {
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private Button btnConnect, btnStart, btnPause, btnResume, btnDock;
     private CheckBox repaired, demoMode;
-    private TextView connection, state, power, suction, volume, issue, note, telemetrySummary;
+    private TextView connection, state, power, suction, volume, issue, note, telemetrySummary, dashboardMode, dashboardState;
     private volatile boolean working = false;
     private boolean hasStatus = false;
+    private long lastStatusAt = 0L;
+    private static final long STATUS_TTL_MS = 60000L;
+    private final android.os.Handler handler = new android.os.Handler(android.os.Looper.getMainLooper());
+    private final Runnable expireStatus = () -> { invalidateStatus("Lecture expirée • actualiser"); if (dashboardState != null) enableButtons(); };
 
     @Override protected void onCreate(Bundle saved) {
         super.onCreate(saved);
@@ -96,6 +99,11 @@ public final class MainActivity extends Activity {
         return value;
     }
 
+    private String appVersion() {
+        try { return getPackageManager().getPackageInfo(getPackageName(), 0).versionName; }
+        catch (android.content.pm.PackageManager.NameNotFoundException e) { return "inconnue"; }
+    }
+
     private void buildUi() {
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
@@ -105,9 +113,32 @@ public final class MainActivity extends Activity {
         scroll.addView(main);
         setContentView(scroll);
 
-        add(main, text("VENII LOCAL", 14, ACCENT, true), 0);
+        add(main, text("VENII LOCAL  •  v" + appVersion(), 14, ACCENT, true), 0);
         add(main, text("N1 Max", 34, PRIMARY, true), 5);
         add(main, text("Pilotage privé en Wi-Fi, sans compte ni cloud", 14, MUTED, false), 4);
+
+        LinearLayout dashboard = column(18, CARD);
+        add(main, dashboard, 20);
+        add(dashboard, text("TABLEAU DE BORD", 12, ACCENT, true), 0);
+        dashboardMode = text("DÉMONSTRATION • aucune commande réelle", 13, ACCENT, true);
+        add(dashboard, dashboardMode, 9);
+        LinearLayout tiles = new LinearLayout(this);
+        tiles.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout batteryTile = column(12, Color.rgb(38, 60, 80));
+        LinearLayout statusTile = column(12, Color.rgb(38, 60, 80));
+        LinearLayout.LayoutParams left = new LinearLayout.LayoutParams(0, -2, 1f);
+        left.rightMargin = dp(8);
+        tiles.addView(batteryTile, left);
+        tiles.addView(statusTile, new LinearLayout.LayoutParams(0, -2, 1f));
+        add(batteryTile, text("BATTERIE", 11, MUTED, true), 0);
+        add(batteryTile, text("— %", 24, PRIMARY, true), 5);
+        add(batteryTile, text("Niveau non identifié", 12, MUTED, false), 3);
+        add(statusTile, text("ÉTAT DU ROBOT", 11, MUTED, true), 0);
+        dashboardState = text("En attente", 16, PRIMARY, true);
+        add(statusTile, dashboardState, 5);
+        add(statusTile, text("Dernière lecture", 12, MUTED, false), 3);
+        add(dashboard, tiles, 14);
+        add(dashboard, text("Les valeurs réelles sont affichées uniquement après lecture du robot.", 12, MUTED, false), 12);
 
         LinearLayout connectivity = column(18, CARD);
         add(main, connectivity, 25);
@@ -158,7 +189,10 @@ public final class MainActivity extends Activity {
         demoMode.setChecked(true);
         add(controls, demoMode, 10);
         demoMode.setOnCheckedChangeListener((b, checked) -> {
-            hasStatus = false; // Require a fresh reading before any real action.
+            invalidateStatus("Lecture nécessaire");
+            repaired.setChecked(false);
+            dashboardMode.setText(checked ? "DÉMONSTRATION • aucune commande réelle" : "MODE RÉEL • commandes directes");
+            dashboardMode.setTextColor(checked ? ACCENT : WARNING);
             connection.setText(checked ? "Mode démo • sans connexion" : "Mode réel • lecture d’état obligatoire");
             note.setText(checked ? "Démo : appuyez sur les boutons pour simuler." : "Réel : connectez-vous au Wi-Fi VENII et relisez l’état avant de commander.");
             enableButtons();
@@ -182,13 +216,31 @@ public final class MainActivity extends Activity {
         add(logs, text("ACTIVITÉ", 12, ACCENT, true), 0);
         note = text("Prêt. Connectez d’abord le téléphone au réseau Wi-Fi VENII.", 13, MUTED, false);
         add(logs, note, 10);
+        LinearLayout changes = column(18, CARD);
+        add(main, changes, 16);
+        add(changes, text("VERSION " + appVersion(), 12, ACCENT, true), 0);
+        add(changes, text("2.1 • Tableau de bord, version visible, contrôle de fraîcheur des données.", 13, PRIMARY, false), 8);
+        add(changes, text("2.0 • Commandes directes sans confirmation, mode démo et lecture d’état.", 12, MUTED, false), 6);
         add(main, text("Prototype indépendant • Aucun jeton stocké • Aucun serveur externe", 12, MUTED, false), 20);
         enableButtons();
     }
 
+    private void invalidateStatus(String message) {
+        hasStatus = false;
+        handler.removeCallbacks(expireStatus);
+        if (dashboardState != null) dashboardState.setText(message);
+        if (telemetrySummary != null) telemetrySummary.setText("Données non actualisées • relire l’état");
+    }
+
+    private boolean freshStatus() {
+        return hasStatus && android.os.SystemClock.elapsedRealtime() - lastStatusAt < STATUS_TTL_MS;
+    }
+
     private void enableButtons() {
         btnConnect.setEnabled(!working);
-        boolean ready = !working && (demoMode.isChecked() || (hasStatus && repaired.isChecked()));
+        demoMode.setEnabled(!working);
+        repaired.setEnabled(!working);
+        boolean ready = !working && (demoMode.isChecked() || (freshStatus() && repaired.isChecked()));
         btnStart.setEnabled(ready);
         btnPause.setEnabled(ready);
         btnResume.setEnabled(ready);
@@ -228,7 +280,7 @@ public final class MainActivity extends Activity {
                 else if (e instanceof java.net.ConnectException) why = "Le robot ne répond pas au port 9000.";
                 else if (e instanceof java.io.IOException) why = "Connexion/lecture impossible. Vérifiez le Wi-Fi et l’état du robot.";
                 else why = "Réponse inattendue. Aucune donnée sensible affichée.";
-                runOnUiThread(() -> { connection.setText("Connexion non confirmée"); note.setText(why); });
+                runOnUiThread(() -> { invalidateStatus("Connexion non confirmée"); connection.setText("Connexion non confirmée"); note.setText(why); });
             } finally {
                 runOnUiThread(() -> { working = false; enableButtons(); });
             }
@@ -237,6 +289,10 @@ public final class MainActivity extends Activity {
 
     private void render(VeniiClient.Status report) {
         hasStatus = true;
+        lastStatusAt = android.os.SystemClock.elapsedRealtime();
+        handler.removeCallbacks(expireStatus);
+        handler.postDelayed(expireStatus, STATUS_TTL_MS);
+        dashboardState.setText("Code " + report.generalState);
         connection.setText("Robot détecté • état reçu");
         state.setText(report.generalState);
         power.setText(report.powerReport);
@@ -251,6 +307,8 @@ public final class MainActivity extends Activity {
     }
 
     private void refresh() {
+        if (working) return;
+        invalidateStatus("Lecture en cours");
         execute("Recherche du robot, authentification puis lecture d’état…", () -> {
             VeniiClient.Status result = VeniiClient.readStatus();
             runOnUiThread(() -> render(result));
@@ -258,7 +316,7 @@ public final class MainActivity extends Activity {
     }
 
     private void sendStart() {
-        if (working || demoMode.isChecked() || !repaired.isChecked() || !hasStatus) return;
+        if (working || demoMode.isChecked() || !repaired.isChecked() || !freshStatus()) return;
         execute("Authentification et état de sécurité, puis un seul ordre 1020…", () -> {
             VeniiClient.StartResult result = VeniiClient.startOnce();
             runOnUiThread(() -> {
@@ -269,6 +327,7 @@ public final class MainActivity extends Activity {
                         + " • après : " + result.after.generalState
                         + ". Vérifiez physiquement le robot.");
                 } else {
+                    invalidateStatus("État non actualisé");
                     note.setText("1020 transmis. Aucune nouvelle lecture d’état. Vérifiez physiquement le robot.");
                 }
 
@@ -283,7 +342,7 @@ public final class MainActivity extends Activity {
     }
 
     private void sendUnverified(int code, String label) {
-        if (working || !hasStatus || !repaired.isChecked() || demoMode.isChecked()) return;
+        if (working || !freshStatus() || !repaired.isChecked() || demoMode.isChecked()) return;
         execute("Envoi local de " + label + " (" + code + ")…", () -> {
             VeniiClient.StartResult result = VeniiClient.commandOnce(code);
             runOnUiThread(() -> {
@@ -294,6 +353,7 @@ public final class MainActivity extends Activity {
                         + result.before.generalState + " • après : " + result.after.generalState
                         + ". Observez physiquement le robot.");
                 } else {
+                    invalidateStatus("État non actualisé");
                     note.setText(label + " (" + code + ") transmis, mais état ultérieur indisponible. Vérifiez physiquement le robot.");
                 }
             });
@@ -301,6 +361,7 @@ public final class MainActivity extends Activity {
     }
 
     @Override protected void onDestroy() {
+        handler.removeCallbacks(expireStatus);
         io.shutdownNow();
         super.onDestroy();
     }
