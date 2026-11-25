@@ -22,7 +22,7 @@ import java.net.SocketTimeoutException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/** Non-official, locally controlled UI. No cloud, account, analytics or persistence. */
+/** Non-official, locally controlled UI. No cloud, account or analytics. Only demo preferences are saved locally. */
 public final class MainActivity extends Activity {
     private static final int BG = Color.rgb(9, 19, 32);
     private static final int CARD = Color.rgb(21, 37, 55);
@@ -34,7 +34,19 @@ public final class MainActivity extends Activity {
     private Button btnConnect, btnStart, btnPause, btnResume, btnDock;
     private CheckBox repaired, demoMode;
     private TextView connection, state, power, suction, volume, issue, note, telemetrySummary, dashboardMode, dashboardState, historyView, diagnostic, demoStatus;
-    private View robotPreview, settingsPanel;
+    private View robotPreview, settingsPanel, manualPanel;
+    private DemoMap demoMap;
+    private TextView elapsedLabel;
+    private long elapsedBefore = 0, startedAt = 0;
+    private boolean timerRunning = false;
+    private final Runnable demoTick = new Runnable() {
+        public void run() {
+            if (!timerRunning) return;
+            updateElapsed();
+            if (demoMap != null) demoMap.autoStep();
+            handler.postDelayed(this, 1000);
+        }
+    };
     private TextView settingsSummary, scheduleLabel;
     private android.widget.Spinner aspirationChoice, waterChoice, cleaningChoice;
     private android.widget.SeekBar volumeChoice;
@@ -194,14 +206,17 @@ public final class MainActivity extends Activity {
         add(section, text("RÉGLAGES EXPÉRIMENTAUX", 12, ACCENT, true), 0);
         add(section, text("DÉMO UNIQUEMENT • options illustratives, non validées sur le N1 Max. Aucun réglage transmis au robot.", 13, WARNING, true), 8);
         aspirationChoice = demoChoice(section, "Puissance d’aspiration", new String[]{"Silencieux", "Standard", "Fort", "Maximum"});
-        aspirationChoice.setSelection(1);
+        aspirationChoice.setSelection(Math.max(0,Math.min(3,demoPrefs().getInt("aspiration",1))));
         waterChoice = demoChoice(section, "Débit d’eau", new String[]{"Sans eau", "Faible", "Moyen", "Élevé"});
         cleaningChoice = demoChoice(section, "Mode de nettoyage", new String[]{"Automatique", "Zone ciblée", "Bordures", "Lavage"});
-        TextView volumeLabel = text("Volume simulé : 50 %", 13, MUTED, true);
+        waterChoice.setSelection(Math.max(0,Math.min(3,demoPrefs().getInt("water",0))));
+        cleaningChoice.setSelection(Math.max(0,Math.min(3,demoPrefs().getInt("cleaning",0))));
+        int savedVolume = Math.max(0,Math.min(100,demoPrefs().getInt("volume",50)));
+        TextView volumeLabel = text("Volume simulé : " + savedVolume + " %", 13, MUTED, true);
         add(section, volumeLabel, 12);
         volumeChoice = new android.widget.SeekBar(this);
         volumeChoice.setMax(100);
-        volumeChoice.setProgress(50);
+        volumeChoice.setProgress(savedVolume);
         volumeChoice.setProgressTintList(android.content.res.ColorStateList.valueOf(ACCENT));
         volumeChoice.setThumbTintList(android.content.res.ColorStateList.valueOf(ACCENT));
         add(section, volumeChoice, 5);
@@ -214,6 +229,9 @@ public final class MainActivity extends Activity {
         scheduleEnabled.setText("Programmer un nettoyage fictif");
         scheduleEnabled.setTextColor(PRIMARY);
         scheduleEnabled.setButtonTintList(android.content.res.ColorStateList.valueOf(ACCENT));
+        scheduleHour = Math.max(0,Math.min(23,demoPrefs().getInt("hour",9)));
+        scheduleMinute = Math.max(0,Math.min(59,demoPrefs().getInt("minute",0)));
+        scheduleEnabled.setChecked(demoPrefs().getBoolean("schedule_demo",false));
         add(section, scheduleEnabled, 12);
         scheduleLabel = text("", 13, MUTED, false);
         add(section, scheduleLabel, 5);
@@ -229,7 +247,7 @@ public final class MainActivity extends Activity {
                 updateScheduleLabel();
             }, scheduleHour, scheduleMinute, true).show();
         });
-        add(section, text("Aucune alarme ni tâche automatique n’est créée. Les choix restent dans la session.", 12, MUTED, false), 8);
+        add(section, text("Aucune alarme ni tâche automatique n’est créée. Les choix appliqués sont sauvegardés uniquement sur ce téléphone.", 12, MUTED, false), 8);
         Button apply = button("Appliquer en démonstration", ACCENT, BG);
         add(section, apply, 12);
         settingsSummary = text("Aucun réglage de démonstration appliqué.", 13, MUTED, false);
@@ -241,8 +259,135 @@ public final class MainActivity extends Activity {
                 + " • Mode : " + cleaningChoice.getSelectedItem()
                 + " • Volume : " + volumeChoice.getProgress() + " %"
                 + " • Horaire fictif : " + (scheduleEnabled.isChecked() ? scheduledTime() : "désactivé");
-            settingsSummary.setText("DÉMO : " + summary);
+            saveDemoPreferences();
+            settingsSummary.setText("DÉMO : " + summary + " • préférences enregistrées");
             activity("DÉMO : réglages appliqués localement. " + summary + ". Aucun ordre envoyé.");
+        });
+        return section;
+    }
+
+    private android.content.SharedPreferences demoPrefs() {
+        return getSharedPreferences("demo_preferences", MODE_PRIVATE);
+    }
+
+    private void saveDemoPreferences() {
+        demoPrefs().edit()
+            .putInt("aspiration", aspirationChoice.getSelectedItemPosition())
+            .putInt("water", waterChoice.getSelectedItemPosition())
+            .putInt("cleaning", cleaningChoice.getSelectedItemPosition())
+            .putInt("volume", volumeChoice.getProgress())
+            .putInt("hour", scheduleHour).putInt("minute", scheduleMinute)
+            .putBoolean("schedule_demo", scheduleEnabled.isChecked()).apply();
+    }
+
+    private void updateElapsed() {
+        if (elapsedLabel == null) return;
+        long seconds = (elapsedBefore + (timerRunning ? android.os.SystemClock.elapsedRealtime() - startedAt : 0)) / 1000;
+        elapsedLabel.setText(String.format(java.util.Locale.FRANCE, "%02d:%02d", seconds / 60, seconds % 60));
+    }
+
+    private void startDemoTimer(boolean reset) {
+        pauseDemoTimer();
+        if (reset) elapsedBefore = 0;
+        startedAt = android.os.SystemClock.elapsedRealtime();
+        timerRunning = true;
+        handler.post(demoTick);
+    }
+
+    private void pauseDemoTimer() {
+        if (timerRunning) elapsedBefore += android.os.SystemClock.elapsedRealtime() - startedAt;
+        timerRunning = false;
+        handler.removeCallbacks(demoTick);
+        updateElapsed();
+    }
+
+    private final class DemoMap extends View {
+        private final android.graphics.Paint p = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+        private final boolean[][] visited = new boolean[6][8];
+        private int x = 1, y = 1, direction = 1;
+        DemoMap() { super(MainActivity.this); visited[y][x] = true; setContentDescription("Carte fictive de démonstration, sans données du robot"); }
+        void step(int dx, int dy) {
+            x = Math.max(0, Math.min(7, x + dx)); y = Math.max(0, Math.min(5, y + dy));
+            visited[y][x] = true; invalidate();
+        }
+        void autoStep() {
+            if ((direction > 0 && x == 7) || (direction < 0 && x == 0)) {
+                if (y == 5) { y = 0; } else { y++; }
+                direction = -direction; visited[y][x] = true; invalidate();
+            } else step(direction, 0);
+        }
+        void reset() {
+            for (boolean[] row : visited) java.util.Arrays.fill(row, false);
+            x = 1; y = 1; direction = 1; visited[y][x] = true; invalidate();
+        }
+        @Override protected void onDraw(android.graphics.Canvas c) {
+            super.onDraw(c);
+            float pad = dp(8), cw = (getWidth()-2*pad)/8f, ch = (getHeight()-2*pad)/6f;
+            for (int iy=0; iy<6; iy++) for (int ix=0; ix<8; ix++) {
+                p.setColor(visited[iy][ix] ? Color.rgb(30,112,100) : Color.rgb(38,60,80));
+                c.drawRoundRect(pad+ix*cw+2,pad+iy*ch+2,pad+(ix+1)*cw-2,pad+(iy+1)*ch-2,dp(4),dp(4),p);
+            }
+            float cx=pad+(x+.5f)*cw, cy=pad+(y+.5f)*ch;
+            p.setColor(PRIMARY); c.drawCircle(cx,cy,Math.min(cw,ch)*.34f,p);
+            p.setColor(ACCENT); c.drawCircle(cx,cy,Math.min(cw,ch)*.19f,p);
+        }
+    }
+
+    private void manualStep(int dx, int dy, String label) {
+        if (!demoMode.isChecked() || working) return;
+        pauseDemoTimer();
+        stopDemoAnimation();
+        demoMap.step(dx,dy);
+        demoStatus.setText("Simulation : " + label);
+        activity("DÉMO : direction " + label + " • carte fictive uniquement.");
+    }
+
+    private LinearLayout buildManualPanel() {
+        LinearLayout section = column(14, CARD);
+        add(section, text("TÉLÉCOMMANDE ET CARTE", 12, ACCENT, true), 0);
+        add(section, text("DÉMO UNIQUEMENT • carte fictive, aucun mouvement réel.", 13, WARNING, true), 8);
+        elapsedLabel = text("00:00", 30, PRIMARY, true);
+        elapsedLabel.setGravity(Gravity.CENTER);
+        add(section, elapsedLabel, 8);
+        TextView caption = text("Temps de nettoyage simulé", 12, MUTED, false);
+        caption.setGravity(Gravity.CENTER);
+        add(section, caption, 0);
+        demoMap = new DemoMap();
+        LinearLayout.LayoutParams mp = new LinearLayout.LayoutParams(-1,dp(170));
+        mp.topMargin = dp(10);
+        section.addView(demoMap,mp);
+        Button up = button("↑  Avancer", Color.rgb(38,60,80), PRIMARY);
+        add(section, up, 8);
+        up.setOnClickListener(v -> manualStep(0,-1,"Avancer"));
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        Button left = button("←", Color.rgb(38,60,80), PRIMARY);
+        Button stop = button("STOP", Color.rgb(155,46,57), PRIMARY);
+        Button right = button("→", Color.rgb(38,60,80), PRIMARY);
+        for (Button b : new Button[]{left,stop,right}) {
+            LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(0,-2,1f);
+            bp.setMargins(dp(3),0,dp(3),0); row.addView(b,bp);
+        }
+        left.setContentDescription("Gauche"); right.setContentDescription("Droite");
+        add(section,row,8);
+        left.setOnClickListener(v -> manualStep(-1,0,"Gauche"));
+        right.setOnClickListener(v -> manualStep(1,0,"Droite"));
+        stop.setOnClickListener(v -> {
+            if (!demoMode.isChecked()) return;
+            pauseDemoTimer(); stopDemoAnimation();
+            demoStatus.setText("Simulation : STOP");
+            activity("DÉMO : STOP simulé • aucun ordre réel.");
+        });
+        Button down = button("↓  Reculer", Color.rgb(38,60,80), PRIMARY);
+        add(section,down,8);
+        down.setOnClickListener(v -> manualStep(0,1,"Reculer"));
+        Button reset = button("Réinitialiser la carte et le temps", Color.rgb(38,60,80), PRIMARY);
+        add(section,reset,8);
+        reset.setOnClickListener(v -> {
+            if (!demoMode.isChecked()) return;
+            pauseDemoTimer(); stopDemoAnimation(); elapsedBefore=0; updateElapsed(); demoMap.reset();
+            demoStatus.setText("Simulation : en attente");
+            activity("DÉMO : carte et chronomètre réinitialisés.");
         });
         return section;
     }
@@ -346,6 +491,10 @@ public final class MainActivity extends Activity {
             robotPreview.setVisibility(checked ? View.VISIBLE : View.GONE);
             demoStatus.setVisibility(checked ? View.VISIBLE : View.GONE);
             demoStatus.setText("Simulation : en attente");
+            pauseDemoTimer();
+            elapsedBefore = 0; updateElapsed();
+            if (demoMap != null) demoMap.reset();
+            if (manualPanel != null) manualPanel.setVisibility(checked ? View.VISIBLE : View.GONE);
             if (settingsPanel != null) settingsPanel.setVisibility(checked ? View.VISIBLE : View.GONE);
             invalidateStatus("Lecture nécessaire");
             repaired.setChecked(false);
@@ -374,6 +523,9 @@ public final class MainActivity extends Activity {
         btnDock.setOnClickListener(v -> { if (demoMode.isChecked()) simulate(1050, "Retour à la base"); else sendUnverified(1050, "Retour à la base"); });
         add(controls, text("Les codes 1050, 1060 et 1070 restent à valider sur votre robot. Le mode réel demande un état récent et votre vérification physique. Un appui envoie directement un seul ordre : restez près du bouton physique du robot.", 12, MUTED, false), 12);
 
+        LinearLayout manual = buildManualPanel();
+        manualPanel = manual;
+        add(main, manual, 12);
         LinearLayout settings = buildDemoSettings();
         settingsPanel = settings;
         add(main, settings, 12);
@@ -402,6 +554,7 @@ public final class MainActivity extends Activity {
         LinearLayout changes = column(18, CARD);
         add(main, changes, 16);
         add(changes, text("VERSION " + appVersion(), 12, ACCENT, true), 0);
+        add(changes, text("2.4 • Carte et télécommande fictives, chronomètre, préférences démo locales.", 13, PRIMARY, false), 8);
         add(changes, text("2.3 • Réglages de démonstration : aspiration, eau, mode, volume et horaire fictif.", 13, PRIMARY, false), 8);
         add(changes, text("2.2 • Historique horodaté, animation démo, accès rapide et diagnostic local.", 13, PRIMARY, false), 8);
         add(changes, text("2.1 • Tableau de bord, version visible, contrôle de fraîcheur des données.", 13, PRIMARY, false), 8);
@@ -524,6 +677,9 @@ public final class MainActivity extends Activity {
 
     private void simulate(int code, String label) {
         showDemoMotion(code, label);
+        if (code == 1020) { demoMap.reset(); startDemoTimer(true); }
+        else if (code == 1070) startDemoTimer(false);
+        else pauseDemoTimer();
         activity("DÉMO : " + label + " (" + code + ") simulé. Aucune commande envoyée.");
         connection.setText("Mode démo • commande " + code + " simulée");
     }
@@ -548,11 +704,13 @@ public final class MainActivity extends Activity {
     }
 
     @Override protected void onStop() {
+        pauseDemoTimer();
         stopDemoAnimation();
         super.onStop();
     }
 
     @Override protected void onDestroy() {
+        pauseDemoTimer();
         stopDemoAnimation();
         handler.removeCallbacks(expireStatus);
         io.shutdownNow();
