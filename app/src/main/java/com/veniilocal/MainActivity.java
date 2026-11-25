@@ -34,7 +34,7 @@ public final class MainActivity extends Activity {
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private Button btnConnect, btnStart, btnPause, btnResume, btnDock;
     private CheckBox repaired, demoMode;
-    private TextView connection, state, power, suction, volume, issue, note;
+    private TextView connection, state, power, suction, volume, issue, note, telemetrySummary;
     private volatile boolean working = false;
     private boolean hasStatus = false;
 
@@ -125,12 +125,14 @@ public final class MainActivity extends Activity {
         LinearLayout readings = column(18, CARD);
         add(main, readings, 16);
         add(readings, text("DONNÉES DU ROBOT", 12, ACCENT, true), 0);
+        telemetrySummary = text("En attente d’une lecture réelle • données non disponibles", 13, MUTED, false);
+        add(readings, telemetrySummary, 8);
         state = valueRow(readings, "État général (code brut 888)");
-        power = valueRow(readings, "Rapport d’alimentation (code 60)");
+        power = valueRow(readings, "Alimentation • valeur brute (code 60, pas un % batterie confirmé)");
         suction = valueRow(readings, "Puissance nettoyage (1300)");
         volume = valueRow(readings, "Volume (1502)");
         issue = valueRow(readings, "Code d’erreur (70, si présent)");
-        add(readings, text("Les valeurs brutes ne sont pas interprétées comme des diagnostics certains.", 12, MUTED, false), 14);
+        add(readings, text("« — » signifie : donnée absente ou non décodée. Le pourcentage de batterie et la signification des codes d’erreur restent à identifier ; ne pas les deviner.", 12, MUTED, false), 14);
 
         LinearLayout safety = column(18, CARD);
         add(main, safety, 16);
@@ -241,6 +243,9 @@ public final class MainActivity extends Activity {
         suction.setText(report.suction);
         volume.setText(report.volume);
         issue.setText(report.error);
+        telemetrySummary.setText("Lecture réelle reçue • " + report.messageCount
+            + " champ(s) reconnus • " + new java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(new java.util.Date())
+            + " • valeurs non interprétées");
         note.setText("Lecture d’état reçue sur le Wi-Fi local. Aucune commande de mouvement envoyée.");
         enableButtons();
     }
