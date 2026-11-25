@@ -20,6 +20,7 @@ public final class VeniiClient {
     private static final String HOST = "192.168.78.1";
     private static final int PORT = 9000;
     private static final int AUTH = 67, STATUS = 888, START = 1020;
+    private static final int PAUSE = 1060, RESUME = 1070, DOCK = 1050;
     private static final String[] DISCOVERY = {"n1_find", "veniibot_find"};
 
     private VeniiClient() {}
@@ -141,10 +142,17 @@ public final class VeniiClient {
 
     /** Caller must require physical checks and user confirmation BEFORE invoking. */
     public static StartResult startOnce() throws Exception {
+        return commandOnce(START);
+    }
+
+    /** Send exactly one movement command after a status check; no auto-retries. */
+    public static StartResult commandOnce(int code) throws Exception {
+        if (code != START && code != PAUSE && code != RESUME && code != DOCK)
+            throw new IllegalArgumentException("Commande non autorisée.");
         try (Session session = openSession()) {
             Status before = new Status(requestStatus(session));
-            send(session.socket, envelope(START, session.mac));
-            // 1020 may be executed without separate ACK. Never claim success from send alone.
+            send(session.socket, envelope(code, session.mac));
+            // The device may act without a separate ACK. Never claim physical success from send alone.
             Status after = null;
             try {
                 Thread.sleep(1600);
