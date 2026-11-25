@@ -32,8 +32,8 @@ public final class MainActivity extends Activity {
     private static final int MUTED = Color.rgb(164, 183, 201);
     private static final int WARNING = Color.rgb(255, 191, 106);
     private final ExecutorService io = Executors.newSingleThreadExecutor();
-    private Button btnConnect, btnStart;
-    private CheckBox repaired;
+    private Button btnConnect, btnStart, btnPause, btnResume, btnDock;
+    private CheckBox repaired, demoMode;
     private TextView connection, state, power, suction, volume, issue, note;
     private volatile boolean working = false;
     private boolean hasStatus = false;
@@ -135,10 +135,10 @@ public final class MainActivity extends Activity {
         LinearLayout safety = column(18, CARD);
         add(main, safety, 16);
         add(safety, text("SÉCURITÉ", 12, WARNING, true), 0);
-        add(safety, text("Alerte récente : vérifier la brosse latérale avant tout nouveau nettoyage.", 15, PRIMARY, true), 8);
+        add(safety, text("Vérifiez que le pare-chocs et les capteurs latéraux sont libres, puis dégagez le sol avant toute commande réelle.", 15, PRIMARY, true), 8);
         add(safety, text("Le contrôle à distance n’est pas un arrêt d’urgence. Gardez le bouton physique accessible et éloignez le robot des escaliers.", 13, MUTED, false), 8);
         repaired = new CheckBox(this);
-        repaired.setText("J’ai contrôlé la brosse et résolu l’alerte.");
+        repaired.setText("J’ai contrôlé le pare-chocs, les capteurs et dégagé le sol.");
         repaired.setTextColor(PRIMARY);
         repaired.setTextSize(13);
         repaired.setButtonTintList(android.content.res.ColorStateList.valueOf(ACCENT));
@@ -148,16 +148,32 @@ public final class MainActivity extends Activity {
         LinearLayout controls = column(18, CARD);
         add(main, controls, 16);
         add(controls, text("COMMANDES", 12, ACCENT, true), 0);
+        demoMode = new CheckBox(this);
+        demoMode.setText("Mode démonstration (aucun ordre envoyé)");
+        demoMode.setTextColor(PRIMARY);
+        demoMode.setTextSize(14);
+        demoMode.setButtonTintList(android.content.res.ColorStateList.valueOf(ACCENT));
+        demoMode.setChecked(true);
+        add(controls, demoMode, 10);
+        demoMode.setOnCheckedChangeListener((b, checked) -> {
+            hasStatus = false; // Require a fresh reading before any real action.
+            connection.setText(checked ? "Mode démo • sans connexion" : "Mode réel • lecture d’état obligatoire");
+            note.setText(checked ? "Démo : appuyez sur les boutons pour simuler." : "Réel : connectez-vous au Wi-Fi VENII et relisez l’état avant de commander.");
+            enableButtons();
+        });
         btnStart = button("Démarrer le nettoyage  ·  1020", ACCENT, BG);
         add(controls, btnStart, 14);
         btnStart.setOnClickListener(v -> confirmStart());
-        Button pause = button("Pause  ·  1060   (à valider)", Color.rgb(43, 55, 68), MUTED);
-        add(controls, pause, 9);
-        pause.setEnabled(false);
-        Button dock = button("Retour base  ·  1050   (à valider)", Color.rgb(43, 55, 68), MUTED);
-        add(controls, dock, 9);
-        dock.setEnabled(false);
-        add(controls, text("Démarrage déjà observé physiquement. Pause et retour base restent désactivés jusqu’aux essais de validation.", 12, MUTED, false), 12);
+        btnPause = button("Pause  ·  1060", Color.rgb(38, 60, 80), PRIMARY);
+        add(controls, btnPause, 9);
+        btnPause.setOnClickListener(v -> confirmCommand(1060, "Pause"));
+        btnResume = button("Reprendre  ·  1070", Color.rgb(38, 60, 80), PRIMARY);
+        add(controls, btnResume, 9);
+        btnResume.setOnClickListener(v -> confirmCommand(1070, "Reprendre"));
+        btnDock = button("Retour à la base  ·  1050", Color.rgb(38, 60, 80), PRIMARY);
+        add(controls, btnDock, 9);
+        btnDock.setOnClickListener(v -> confirmCommand(1050, "Retour à la base"));
+        add(controls, text("Les codes 1050, 1060 et 1070 restent à valider sur votre robot. Le mode réel demande un état récent, votre vérification physique et une confirmation.", 12, MUTED, false), 12);
 
         LinearLayout logs = column(18, CARD);
         add(main, logs, 16);
@@ -170,8 +186,12 @@ public final class MainActivity extends Activity {
 
     private void enableButtons() {
         btnConnect.setEnabled(!working);
-        btnStart.setEnabled(!working && hasStatus && repaired.isChecked());
-        btnStart.setAlpha(btnStart.isEnabled() ? 1f : .4f);
+        boolean ready = !working && (demoMode.isChecked() || (hasStatus && repaired.isChecked()));
+        btnStart.setEnabled(ready);
+        btnPause.setEnabled(ready);
+        btnResume.setEnabled(ready);
+        btnDock.setEnabled(ready);
+        for (Button b : new Button[]{btnStart, btnPause, btnResume, btnDock}) b.setAlpha(b.isEnabled() ? 1f : .4f);
         btnConnect.setAlpha(btnConnect.isEnabled() ? 1f : .5f);
     }
 
@@ -233,10 +253,11 @@ public final class MainActivity extends Activity {
     }
 
     private void confirmStart() {
+        if (demoMode.isChecked()) { simulate(1020, "Démarrer"); return; }
         if (!hasStatus || !repaired.isChecked() || working) return;
         new AlertDialog.Builder(this)
             .setTitle("Confirmer un démarrage réel")
-            .setMessage("La commande 1020 peut faire quitter sa base au robot. Avez-vous vérifié la brosse, dégagé le sol et êtes-vous près du bouton physique ? L'application ne peut PAS garantir l'arrêt à distance.")
+            .setMessage("La commande 1020 peut faire quitter sa base au robot. Avez-vous vérifié le pare-chocs, les capteurs, dégagé le sol et êtes-vous près du bouton physique ? L'application ne peut PAS garantir l'arrêt à distance.")
             .setNegativeButton("Annuler", (d, w) -> {})
             .setPositiveButton("Envoyer 1020", (d, w) -> sendStart())
             .show();
@@ -260,6 +281,41 @@ public final class MainActivity extends Activity {
                     .setMessage("Le message 1020 a été transmis, mais seul un mouvement observé confirme le démarrage. Pour arrêter, utilisez le bouton physique du Venii.")
                     .setPositiveButton("Compris", (d, w) -> {})
                     .show();
+            });
+        });
+    }
+
+
+    private void simulate(int code, String label) {
+        note.setText("DÉMO : " + label + " (" + code + ") simulé. Aucune commande envoyée.");
+        connection.setText("Mode démo • commande " + code + " simulée");
+    }
+
+    private void confirmCommand(int code, String label) {
+        if (demoMode.isChecked()) { simulate(code, label); return; }
+        if (working || !hasStatus || !repaired.isChecked()) return;
+        new AlertDialog.Builder(this)
+            .setTitle("Confirmer : " + label)
+            .setMessage("Commande " + code + " NON TESTÉE sur ce robot. Vous devez être à proximité, avoir dégagé les obstacles et pouvoir utiliser son bouton physique. Confirmez-vous l’envoi d’un seul ordre réel ?")
+            .setNegativeButton("Annuler", (d, w) -> {})
+            .setPositiveButton("Envoyer " + code, (d, w) -> sendUnverified(code, label))
+            .show();
+    }
+
+    private void sendUnverified(int code, String label) {
+        if (working || !hasStatus || !repaired.isChecked() || demoMode.isChecked()) return;
+        execute("Envoi local de " + label + " (" + code + ")…", () -> {
+            VeniiClient.StartResult result = VeniiClient.commandOnce(code);
+            runOnUiThread(() -> {
+                connection.setText("Commande " + code + " transmise • résultat à vérifier");
+                if (result.after != null) {
+                    render(result.after);
+                    note.setText(label + " (" + code + ") transmis. État avant : "
+                        + result.before.generalState + " • après : " + result.after.generalState
+                        + ". Observez physiquement le robot.");
+                } else {
+                    note.setText(label + " (" + code + ") transmis, mais état ultérieur indisponible. Vérifiez physiquement le robot.");
+                }
             });
         });
     }
