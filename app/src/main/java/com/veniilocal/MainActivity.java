@@ -165,17 +165,17 @@ public final class MainActivity extends Activity {
         });
         btnStart = button("Démarrer le nettoyage  ·  1020", ACCENT, BG);
         add(controls, btnStart, 14);
-        btnStart.setOnClickListener(v -> confirmStart());
+        btnStart.setOnClickListener(v -> { if (demoMode.isChecked()) simulate(1020, "Démarrer"); else sendStart(); });
         btnPause = button("Pause  ·  1060", Color.rgb(38, 60, 80), PRIMARY);
         add(controls, btnPause, 9);
-        btnPause.setOnClickListener(v -> confirmCommand(1060, "Pause"));
+        btnPause.setOnClickListener(v -> { if (demoMode.isChecked()) simulate(1060, "Pause"); else sendUnverified(1060, "Pause"); });
         btnResume = button("Reprendre  ·  1070", Color.rgb(38, 60, 80), PRIMARY);
         add(controls, btnResume, 9);
-        btnResume.setOnClickListener(v -> confirmCommand(1070, "Reprendre"));
+        btnResume.setOnClickListener(v -> { if (demoMode.isChecked()) simulate(1070, "Reprendre"); else sendUnverified(1070, "Reprendre"); });
         btnDock = button("Retour à la base  ·  1050", Color.rgb(38, 60, 80), PRIMARY);
         add(controls, btnDock, 9);
-        btnDock.setOnClickListener(v -> confirmCommand(1050, "Retour à la base"));
-        add(controls, text("Les codes 1050, 1060 et 1070 restent à valider sur votre robot. Le mode réel demande un état récent, votre vérification physique et une confirmation.", 12, MUTED, false), 12);
+        btnDock.setOnClickListener(v -> { if (demoMode.isChecked()) simulate(1050, "Retour à la base"); else sendUnverified(1050, "Retour à la base"); });
+        add(controls, text("Les codes 1050, 1060 et 1070 restent à valider sur votre robot. Le mode réel demande un état récent et votre vérification physique. Un appui envoie directement un seul ordre : restez près du bouton physique du robot.", 12, MUTED, false), 12);
 
         LinearLayout logs = column(18, CARD);
         add(main, logs, 16);
@@ -257,19 +257,8 @@ public final class MainActivity extends Activity {
         });
     }
 
-    private void confirmStart() {
-        if (demoMode.isChecked()) { simulate(1020, "Démarrer"); return; }
-        if (!hasStatus || !repaired.isChecked() || working) return;
-        new AlertDialog.Builder(this)
-            .setTitle("Confirmer un démarrage réel")
-            .setMessage("La commande 1020 peut faire quitter sa base au robot. Avez-vous vérifié le pare-chocs, les capteurs, dégagé le sol et êtes-vous près du bouton physique ? L'application ne peut PAS garantir l'arrêt à distance.")
-            .setNegativeButton("Annuler", (d, w) -> {})
-            .setPositiveButton("Envoyer 1020", (d, w) -> sendStart())
-            .show();
-    }
-
     private void sendStart() {
-        if (working || !repaired.isChecked() || !hasStatus) return;
+        if (working || demoMode.isChecked() || !repaired.isChecked() || !hasStatus) return;
         execute("Authentification et état de sécurité, puis un seul ordre 1020…", () -> {
             VeniiClient.StartResult result = VeniiClient.startOnce();
             runOnUiThread(() -> {
@@ -282,10 +271,7 @@ public final class MainActivity extends Activity {
                 } else {
                     note.setText("1020 transmis. Aucune nouvelle lecture d’état. Vérifiez physiquement le robot.");
                 }
-                new AlertDialog.Builder(this).setTitle("Vérifier le robot")
-                    .setMessage("Le message 1020 a été transmis, mais seul un mouvement observé confirme le démarrage. Pour arrêter, utilisez le bouton physique du Venii.")
-                    .setPositiveButton("Compris", (d, w) -> {})
-                    .show();
+
             });
         });
     }
@@ -294,17 +280,6 @@ public final class MainActivity extends Activity {
     private void simulate(int code, String label) {
         note.setText("DÉMO : " + label + " (" + code + ") simulé. Aucune commande envoyée.");
         connection.setText("Mode démo • commande " + code + " simulée");
-    }
-
-    private void confirmCommand(int code, String label) {
-        if (demoMode.isChecked()) { simulate(code, label); return; }
-        if (working || !hasStatus || !repaired.isChecked()) return;
-        new AlertDialog.Builder(this)
-            .setTitle("Confirmer : " + label)
-            .setMessage("Commande " + code + " NON TESTÉE sur ce robot. Vous devez être à proximité, avoir dégagé les obstacles et pouvoir utiliser son bouton physique. Confirmez-vous l’envoi d’un seul ordre réel ?")
-            .setNegativeButton("Annuler", (d, w) -> {})
-            .setPositiveButton("Envoyer " + code, (d, w) -> sendUnverified(code, label))
-            .show();
     }
 
     private void sendUnverified(int code, String label) {
