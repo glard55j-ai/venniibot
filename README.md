@@ -1,6 +1,8 @@
-# Venii Local — application Android native (prototype 2.1)
+# Venii Local — application Android native (prototype 2.2)
 
 ## Journal des versions
+
+- **2.2-test (build 4)** : historique horodaté (30 événements en mémoire, effaçables, non persistés), animation de démonstration sans réseau, accès rapide aux commandes, diagnostic local de lecture et erreurs de communication. Les codes de commande et les protections de 2.1 restent inchangés.
 
 - **2.1-test (build 3)** : tableau de bord, indication du mode actif, niveau de batterie marqué non identifié, numéro de version visible, journal des changements dans l'application. Une lecture d'état expire après 60 secondes ; une erreur de connexion ou un changement de mode invalide les données. 
 - **2.0-test (build 2)** : démonstration locale, quatre commandes directes, lecture des valeurs brutes horodatée. La suppression des fenêtres de confirmation a été demandée par l'utilisateur ; les commandes réelles nécessitent toujours une lecture d'état et un contrôle physique.
