@@ -79,7 +79,20 @@ public final class MainActivity extends Activity {
     private long lastStatusAt = 0L;
     private static final long STATUS_TTL_MS = 60000L;
     private final android.os.Handler handler = new android.os.Handler(android.os.Looper.getMainLooper());
-    private final Runnable expireStatus = () -> { invalidateStatus("Lecture expirée • actualiser"); if (dashboardState != null) enableButtons(); };
+    private final Runnable expireStatus = () -> {
+        hasStatus = false;
+        if (dashboardState != null) {
+            dashboardState.setAlpha(0.48f);
+            dashboardBattery.setAlpha(0.48f);
+            batteryProgress.setAlpha(0.48f);
+            dashboardBatteryHint.setAlpha(0.48f);
+            dashboardReadTime.setText("Dernière lecture : " + lastReportTime + " • expirée");
+            connectionDetail.setText("Lecture expirée • valeurs affichées potentiellement dépassées");
+            connection.setText("Dernière lecture expirée");
+            telemetrySummary.setText("Lecture expirée • données anciennes, commande réelle verrouillée");
+            enableButtons();
+        }
+    };
 
     @Override protected void onCreate(Bundle saved) {
         super.onCreate(saved);
@@ -480,12 +493,21 @@ public final class MainActivity extends Activity {
             android.widget.Toast.makeText(this, "Aucun changement d’état à exporter", android.widget.Toast.LENGTH_SHORT).show();
             return;
         }
-        StringBuilder body = new StringBuilder("KOOMA-I • Journal des états réels\n");
-        body.append("Codes 2/3/4/11/12 : interprétations issues des essais physiques, non documentées officiellement.\n");
-        body.append("Valeur alimentation brute 60 : pourcentage estimé, non garanti.\n");
-        body.append("Échantillonnage : les transitions rapides peuvent être manquées.\n\n");
+        StringBuilder body = new StringBuilder("KOOMA-I • Historique des états\\n");
         java.util.Iterator<String> it = stateTransitions.descendingIterator();
-        while (it.hasNext()) body.append(it.next()).append("\n");
+        while (it.hasNext()) {
+            String entry = it.next();
+            // Export public lisible : heure locale et état, sans codes ni alimentation.
+            int first = entry.indexOf(" • État ");
+            int open = entry.indexOf('(', first);
+            int close = entry.indexOf(" • interprétation", open);
+            if (first >= 0 && open > first && close > open) {
+                body.append(entry.substring(0, first)).append(" – ")
+                    .append(entry.substring(open + 1, close)).append("\\n");
+            } else if (first >= 0) {
+                body.append(entry.substring(0, first)).append(" – État inconnu").append("\\n");
+            }
+        }
         pendingStateExport = body.toString();
         Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
@@ -554,7 +576,7 @@ public final class MainActivity extends Activity {
 
         add(main, text("KOOMA-I  •  v" + appVersion(), 14, ACCENT, true), 0);
         add(main, text("N1 Max", 34, PRIMARY, true), 5);
-        add(main, text("Pilotage privé en Wi-Fi, sans compte ni cloud", 14, MUTED, false), 4);
+        add(main, text("Lecture locale, sans Internet", 14, MUTED, false), 4);
 
         LinearLayout dashboard = column(18, CARD);
         add(main, dashboard, 20);
@@ -605,7 +627,9 @@ public final class MainActivity extends Activity {
         add(connectivity, connection, 10);
         connectionDetail = text("Statut : aucune lecture récente du robot", 12, MUTED, false);
         add(connectivity, connectionDetail, 5);
-        add(connectivity, text("Réseau VENII du robot • 192.168.78.1:9000", 12, MUTED, false), 6);
+        add(connectivity, text("Place le robot sur sa base, puis appuie sur Connecter et lire l’état.", 12, MUTED, false), 6);
+        add(connectivity, text("Consulter l’état n’envoie aucune action.", 12, MUTED, false), 5);
+        add(connectivity, text("Réseau VENII du robot • 192.168.78.1:9000", 12, MUTED, false), 5);
         btnConnect = button("Connecter et lire l’état", ACCENT, BG);
         add(connectivity, btnConnect, 16);
         btnConnect.setOnClickListener(v -> refresh());
@@ -772,6 +796,7 @@ public final class MainActivity extends Activity {
         LinearLayout changes = column(18, CARD);
         add(main, changes, 16);
         add(changes, text("VERSION " + appVersion(), 12, ACCENT, true), 0);
+        add(changes, text("3.2 • Messages de connexion simplifiés, données expirées atténuées, export lisible heure + état.", 13, PRIMARY, false), 8);
         add(changes, text("3.1 • Séparation claire du mode démo et des lectures réelles, indicateur de lecture expirée, export manuel TXT des transitions.", 13, PRIMARY, false), 8);
         add(changes, text("3.0 • Jauge de batterie estimée, heure de dernière lecture et statut de fraîcheur de connexion.", 13, PRIMARY, false), 8);
         add(changes, text("2.9 • Affichage lisible des états 2, 3, 4, 11 et 12 sur la base des essais réels. Codes bruts conservés.", 13, PRIMARY, false), 8);
@@ -793,17 +818,17 @@ public final class MainActivity extends Activity {
     private void invalidateStatus(String message) {
         hasStatus = false;
         handler.removeCallbacks(expireStatus);
-        if (dashboardState != null) dashboardState.setText(message);
-        if (dashboardBattery != null) dashboardBattery.setText("—");
+        if (dashboardState != null) { dashboardState.setText(message); dashboardState.setAlpha(1f); }
+        if (dashboardBattery != null) { dashboardBattery.setText("—"); dashboardBattery.setAlpha(1f); }
         if (dashboardBatteryHint != null) dashboardBatteryHint.setText("Lecture non actualisée");
-        if (batteryProgress != null) batteryProgress.setProgress(0);
+        if (batteryProgress != null) { batteryProgress.setProgress(0); batteryProgress.setAlpha(1f); }
         if (dashboardReadTime != null)
             dashboardReadTime.setText("Dernière lecture : " +
                 ("Jamais".equals(lastReportTime) ? "aucune" : lastReportTime + " • expirée"));
         if (connectionDetail != null) connectionDetail.setText(
             demoMode != null && demoMode.isChecked()
-                ? "Mode démo • aucune lecture réelle récente • commandes simulées"
-                : "Mode réel • lecture non actualisée • relire l’état");
+                ? "Mode démo • données réelles non actualisées"
+                : "Lecture non actualisée • relire l’état");
         if (telemetrySummary != null) telemetrySummary.setText("Données non actualisées • relire l’état");
         if (diagnostic != null) diagnostic.setText(message + " • données à actualiser.");
     }
@@ -859,7 +884,7 @@ public final class MainActivity extends Activity {
                 else if (e instanceof java.net.ConnectException) why = "Le robot ne répond pas au port 9000.";
                 else if (e instanceof java.io.IOException) why = "Connexion/lecture impossible. Vérifiez le Wi-Fi et l’état du robot.";
                 else why = "Réponse inattendue. Aucune donnée sensible affichée.";
-                runOnUiThread(() -> { lastAttempt = why; invalidateStatus("Connexion non confirmée"); connection.setText("Connexion non confirmée"); diagnostic.setText(why); if (lidarReport == null && lidarStatus != null && lidarStatus.getText().toString().startsWith("Écoute en cours")) lidarStatus.setText(why); activity(why + " • résultat d’un ordre éventuel non confirmé."); });
+                runOnUiThread(() -> { lastAttempt = why; invalidateStatus("Connexion non confirmée"); connection.setText("Connexion impossible"); diagnostic.setText(why); if (lidarReport == null && lidarStatus != null && lidarStatus.getText().toString().startsWith("Écoute en cours")) lidarStatus.setText(why); activity(why + " • résultat d’un ordre éventuel non confirmé."); });
             } finally {
                 runOnUiThread(() -> { working = false; enableButtons(); });
             }
@@ -876,6 +901,10 @@ public final class MainActivity extends Activity {
         handler.removeCallbacks(expireStatus);
         handler.postDelayed(expireStatus, STATUS_TTL_MS);
         dashboardState.setText(stateLabel(report.generalState));
+        dashboardState.setAlpha(1f);
+        dashboardBattery.setAlpha(1f);
+        batteryProgress.setAlpha(1f);
+        dashboardBatteryHint.setAlpha(1f);
         dashboardBattery.setText("—");
         batteryProgress.setProgress(0);
         dashboardBatteryHint.setText("Code 60 non interprétable");
@@ -950,7 +979,7 @@ public final class MainActivity extends Activity {
             try (java.io.OutputStream out = getContentResolver().openOutputStream(data.getData(), "wt")) {
                 if (out == null) throw new java.io.IOException();
                 out.write(payload.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-                android.widget.Toast.makeText(this, "Historique exporté", android.widget.Toast.LENGTH_SHORT).show();
+                android.widget.Toast.makeText(this, "Historique enregistré dans le dossier choisi", android.widget.Toast.LENGTH_SHORT).show();
             } catch (Exception failure) {
                 android.widget.Toast.makeText(this, "Export impossible", android.widget.Toast.LENGTH_LONG).show();
             }
