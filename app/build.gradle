@@ -8,8 +8,8 @@ android {
         applicationId 'com.veniilocal.app'
         minSdk 26
         targetSdk 36
-        versionCode 22
-        versionName '4.5-map-diagnostic'
+        versionCode 23
+        versionName '4.6-direct-map-preview'
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
