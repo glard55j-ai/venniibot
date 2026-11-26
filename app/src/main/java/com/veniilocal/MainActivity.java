@@ -39,6 +39,8 @@ public final class MainActivity extends Activity {
     private VeniiClient.LidarReport lidarReport;
     private TextView lidarStatus;
     private Button lidarListen, lidarRaw;
+    private String pendingLidarExport;
+    private static final int LIDAR_EXPORT_REQUEST = 260;
     private String lastReportTime = "Jamais", lastAttempt = "Aucune tentative réelle", lastCommand = "Aucune commande réelle", lastBefore = "—", lastAfter = "—";
     private DemoMap demoMap;
     private TextView elapsedLabel;
@@ -608,9 +610,9 @@ public final class MainActivity extends Activity {
         lidarListen = button("Écouter les données du robot", ACCENT, BG);
         add(lidar, lidarListen, 8);
         lidarListen.setOnClickListener(v -> listenLidar());
-        lidarRaw = button("Copier les données candidates brutes", Color.rgb(38,60,80), PRIMARY);
+        lidarRaw = button("Exporter les données candidates brutes", Color.rgb(38,60,80), PRIMARY);
         add(lidar, lidarRaw, 8);
-        lidarRaw.setOnClickListener(v -> copyLidarRaw());
+        lidarRaw.setOnClickListener(v -> exportLidarRaw());
         add(lidar, text("Le rapport standard ne contient que les codes et tailles. Les données brutes peuvent révéler le plan de votre maison. Conservées en mémoire, jamais envoyées automatiquement.", 12, MUTED, false), 8);
         LinearLayout changes = column(18, CARD);
         add(main, changes, 16);
@@ -732,19 +734,40 @@ public final class MainActivity extends Activity {
         });
     }
 
-    private void copyLidarRaw() {
+    private void exportLidarRaw() {
         if (working || lidarReport == null || !lidarReport.hasPayload()) return;
         new android.app.AlertDialog.Builder(this)
             .setTitle("Données cartographiques privées")
             .setMessage("Ces données non décodées peuvent contenir le plan de votre domicile ou d’autres informations privées. Ne les partagez que si vous le souhaitez.")
             .setNegativeButton("Annuler", null)
-            .setPositiveButton("Copier", (dialog, which) -> {
-                android.content.ClipboardManager cb = (android.content.ClipboardManager)getSystemService(Context.CLIPBOARD_SERVICE);
-                if (cb != null && lidarReport != null) {
-                    cb.setPrimaryClip(android.content.ClipData.newPlainText("KOOMA-I carte brute", lidarReport.rawPayloads()));
-                    android.widget.Toast.makeText(this,"Données copiées",android.widget.Toast.LENGTH_SHORT).show();
+            .setPositiveButton("Choisir un fichier", (dialog, which) -> {
+                if (lidarReport == null) return;
+                pendingLidarExport = lidarReport.rawPayloads();
+                Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+                intent.addCategory(Intent.CATEGORY_OPENABLE);
+                intent.setType("text/plain");
+                intent.putExtra(Intent.EXTRA_TITLE, "KOOMA-I-lidar.txt");
+                try { startActivityForResult(intent, LIDAR_EXPORT_REQUEST); }
+                catch (android.content.ActivityNotFoundException failure) {
+                    pendingLidarExport = null;
+                    android.widget.Toast.makeText(this,"Sélecteur de fichiers indisponible",android.widget.Toast.LENGTH_LONG).show();
                 }
             }).show();
+    }
+
+    @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != LIDAR_EXPORT_REQUEST) return;
+        String payload = pendingLidarExport;
+        pendingLidarExport = null;
+        if (resultCode != RESULT_OK || data == null || data.getData() == null || payload == null) return;
+        try (java.io.OutputStream out = getContentResolver().openOutputStream(data.getData(), "wt")) {
+            if (out == null) throw new java.io.IOException();
+            out.write(payload.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            android.widget.Toast.makeText(this,"Fichier LiDAR enregistré",android.widget.Toast.LENGTH_SHORT).show();
+        } catch (Exception failure) {
+            android.widget.Toast.makeText(this,"Export impossible • réessayez",android.widget.Toast.LENGTH_LONG).show();
+        }
     }
 
     private void refresh() {
