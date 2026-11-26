@@ -10,6 +10,7 @@ import android.graphics.RectF;
 import android.net.Uri;
 import android.os.Bundle;
 import android.view.View;
+import android.view.MotionEvent;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -33,12 +34,16 @@ public final class MapActivity extends Activity {
     private static final int WARNING = Color.rgb(255, 191, 106);
     private static final int REQUEST_TXT = 407;
     private static final int REQUEST_MAP_JSON = 408;
+    private static final int REQUEST_PNG = 409;
     private static final int MAX_IMPORT_BYTES = 6 * 1024 * 1024;
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private volatile boolean destroyed;
-    private TextView importResult, heading, metadata, statistics;
+    private TextView importResult, heading, metadata, statistics, modeLabel, cellLabel;
     private Button importTxtButton, importMapButton;
+    private Button rotateBtn, paletteBtn, zoomInBtn, zoomOutBtn, zoomFitBtn, exportBtn;
     private MapPreviewView mapView;
+    private byte[] activeCells;
+    private int activeWidth, activeHeight, turns, paletteMode;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -55,9 +60,45 @@ public final class MapActivity extends Activity {
         metadata = title(root, "Aucune carte réelle décodée. L'orientation et la signification des octets restent inconnues.", 13, MUTED);
 
         mapView = new MapPreviewView();
-        LinearLayout.LayoutParams mapParams = new LinearLayout.LayoutParams(-1, dp(330));
+        LinearLayout.LayoutParams mapParams = new LinearLayout.LayoutParams(-1, dp(400));
         mapParams.topMargin = dp(12);
         root.addView(mapView, mapParams);
+
+        modeLabel = title(root, "Aperçu en attente • zoom 1×", 13, MUTED);
+        cellLabel = title(root, "Touchez une cellule d'une grille pour lire sa valeur brute.", 13, TEXT);
+
+        LinearLayout firstRow = new LinearLayout(this);
+        firstRow.setOrientation(LinearLayout.HORIZONTAL);
+        root.addView(firstRow, new LinearLayout.LayoutParams(-1, -2));
+        zoomOutBtn = smallButton(firstRow, "Zoom −");
+        zoomFitBtn = smallButton(firstRow, "Cadrer");
+        zoomInBtn = smallButton(firstRow, "Zoom +");
+        zoomOutBtn.setOnClickListener(v -> {
+            mapView.setZoom(mapView.zoom - 0.5f); updateModeLabel();
+        });
+        zoomInBtn.setOnClickListener(v -> {
+            mapView.setZoom(mapView.zoom + 0.5f); updateModeLabel();
+        });
+        zoomFitBtn.setOnClickListener(v -> {
+            mapView.setZoom(1f); updateModeLabel();
+        });
+
+        LinearLayout secondRow = new LinearLayout(this);
+        secondRow.setOrientation(LinearLayout.HORIZONTAL);
+        root.addView(secondRow, new LinearLayout.LayoutParams(-1, -2));
+        rotateBtn = smallButton(secondRow, "Pivoter 90°");
+        paletteBtn = smallButton(secondRow, "Palette");
+        exportBtn = smallButton(secondRow, "Exporter PNG");
+        rotateBtn.setOnClickListener(v -> {
+            if (activeCells == null) return;
+            turns = (turns + 1) % 4; renderActiveGrid();
+        });
+        paletteBtn.setOnClickListener(v -> {
+            if (activeCells == null) return;
+            paletteMode = (paletteMode + 1) % 3; renderActiveGrid();
+        });
+        exportBtn.setOnClickListener(v -> confirmExportPng());
+        setToolsEnabled(false);
 
         title(root, "Une grille importée est représentée en niveaux de gris BRUTS. Elle ne permet pas encore de reconnaître les murs, les pièces ou la position du robot.", 13, WARNING);
 
@@ -92,6 +133,98 @@ public final class MapActivity extends Activity {
         return b;
     }
 
+    private Button smallButton(LinearLayout row, String label) {
+        Button b = new Button(this);
+        b.setText(label);
+        b.setAllCaps(false);
+        b.setTextSize(12);
+        b.setMinHeight(dp(52));
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, -2, 1f);
+        p.setMargins(dp(2), dp(3), dp(2), dp(3));
+        row.addView(b, p);
+        return b;
+    }
+
+    private void setToolsEnabled(boolean available) {
+        for (Button b : new Button[]{zoomInBtn,zoomOutBtn,zoomFitBtn,rotateBtn,paletteBtn,exportBtn})
+            if (b != null) b.setEnabled(available);
+    }
+
+    private void setActiveGrid(byte[] cells, int width, int height) {
+        activeCells = cells;
+        activeWidth = width;
+        activeHeight = height;
+        turns = 0;
+        paletteMode = MapGridRasterizer.GRAYSCALE;
+        setToolsEnabled(cells != null);
+        cellLabel.setText(cells == null
+            ? "Touchez une cellule d'une grille pour lire sa valeur brute."
+            : "Touchez la grille pour obtenir la coordonnée et l'octet d'origine.");
+        if (cells == null) mapView.setPreview(null);
+        else renderActiveGrid();
+        updateModeLabel();
+    }
+
+    private void renderActiveGrid() {
+        if (activeCells == null) return;
+        MapGridRasterizer.Preview preview =
+            MapGridRasterizer.rasterize(activeCells, activeWidth, activeHeight, 600, turns, paletteMode);
+        mapView.setPreview(preview);
+        updateModeLabel();
+        cellLabel.setText("Orientation manuelle uniquement. Touchez une cellule pour lire sa valeur.");
+    }
+
+    private void updateModeLabel() {
+        if (modeLabel == null || mapView == null) return;
+        if (activeCells == null) {
+            modeLabel.setText("Aperçu fictif • aucun octet réel");
+            return;
+        }
+        String palette = paletteMode == 0 ? "Gris brut" : paletteMode == 1
+            ? "Gris inversé" : "Fausses couleurs";
+        modeLabel.setText("Rotation visuelle : " + (turns * 90) + "° • "
+            + palette + " • zoom " + String.format(java.util.Locale.FRANCE, "%.1f", mapView.zoom)
+            + "× • glisser pour déplacer quand zoomé");
+    }
+
+    private void confirmExportPng() {
+        if (activeCells == null || mapView.previewBitmap == null) return;
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("Exporter un aperçu privé ?")
+            .setMessage("L'image peut révéler le plan de votre domicile. Elle contient uniquement "
+                + "les valeurs brutes, sans classification des murs. Aucune transmission automatique : "
+                + "vous choisirez un fichier sur votre téléphone.")
+            .setNegativeButton("Annuler", null)
+            .setPositiveButton("Choisir le fichier", (dialog, which) -> {
+                Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+                intent.setType("image/png");
+                intent.addCategory(Intent.CATEGORY_OPENABLE);
+                intent.putExtra(Intent.EXTRA_TITLE, "KOOMA-I-carte-brute.png");
+                try { startActivityForResult(intent, REQUEST_PNG); }
+                catch (android.content.ActivityNotFoundException error) {
+                    importResult.setText("Enregistrement indisponible sur ce téléphone.");
+                }
+            }).show();
+    }
+
+    private void savePng(Uri uri) {
+        final Bitmap bitmap = mapView.previewBitmap;
+        if (bitmap == null) return;
+        io.execute(() -> {
+            boolean written = false;
+            try (java.io.OutputStream output = getContentResolver().openOutputStream(uri, "wt")) {
+                if (output == null) throw new java.io.IOException("Fichier inaccessible");
+                written = bitmap.compress(Bitmap.CompressFormat.PNG, 100, output);
+            } catch (Exception ignored) { written = false; }
+            boolean done = written;
+            runOnUiThread(() -> {
+                if (destroyed) return;
+                android.widget.Toast.makeText(this, done ? "Aperçu PNG enregistré dans le dossier choisi"
+                    : "Export PNG impossible", android.widget.Toast.LENGTH_LONG).show();
+            });
+        });
+    }
+
     private TextView title(LinearLayout root, String value, int sp, int color) {
         TextView t = new TextView(this);
         t.setText(value);
@@ -115,6 +248,10 @@ public final class MapActivity extends Activity {
 
     @Override protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
+        if (request == REQUEST_PNG) {
+            if (result == RESULT_OK && data != null && data.getData() != null) savePng(data.getData());
+            return;
+        }
         if ((request != REQUEST_TXT && request != REQUEST_MAP_JSON)
                 || result != RESULT_OK || data == null || data.getData() == null) return;
         final Uri uri = data.getData();
@@ -165,7 +302,7 @@ public final class MapActivity extends Activity {
                 runOnUiThread(() -> {
                     if (destroyed) return;
                     if (finalDecoded != null) {
-                        mapView.setPreview(finalDecoded.preview);
+                        setActiveGrid(finalDecoded.cells, finalDecoded.width, finalDecoded.height);
                         statistics.setText(finalDecoded.analysis);
                         heading.setText("GRILLE DÉCODÉE — pas une carte interprétée");
                         metadata.setText(finalDecoded.info);
@@ -191,10 +328,13 @@ public final class MapActivity extends Activity {
 
 
     private static final class DecodedMap {
-        final MapGridRasterizer.Preview preview;
+        final byte[] cells;
+        final int width, height;
         final String analysis, info;
-        DecodedMap(MapGridRasterizer.Preview preview, String analysis, String info) {
-            this.preview = preview;
+        DecodedMap(byte[] cells, int width, int height, String analysis, String info) {
+            this.cells = cells;
+            this.width = width;
+            this.height = height;
             this.analysis = analysis;
             this.info = info;
         }
@@ -217,7 +357,7 @@ public final class MapActivity extends Activity {
                 + optionalNumber(obj, "resolution")
                 + optionalNumber(obj, "x_min")
                 + optionalNumber(obj, "y_min");
-        return new DecodedMap(preview, analysis, info);
+        return new DecodedMap(cells, width, height, analysis, info);
     }
 
     private String readBounded(Uri uri) throws Exception {
@@ -258,7 +398,7 @@ public final class MapActivity extends Activity {
     }
 
     private void showDemo() {
-        mapView.setPreview(null);
+        setActiveGrid(null, 0, 0);
         heading.setText("DÉMONSTRATION — carte fictive");
         metadata.setText("Aucune carte réelle décodée. L'orientation et la signification des octets restent inconnues.");
         importResult.setText("Démonstration seulement : aucun fichier lu ni ordre envoyé au robot.");
@@ -281,7 +421,7 @@ public final class MapActivity extends Activity {
         byte[] decoded = MapGridDecoder.decodeBase64Lz4(
                 Base64.getEncoder().encodeToString(packed), width, height);
         MapGridRasterizer.Preview preview = MapGridRasterizer.rasterize(decoded, width, height, 600);
-        mapView.setPreview(preview);
+        setActiveGrid(decoded, width, height);
         heading.setText("EXEMPLE SYNTHÉTIQUE — aucun robot");
         metadata.setText("16 × 12 octets artificiels ; aperçu des nuances de gris, sans murs ni pièces.");
         statistics.setText(MapGridStatistics.summarize(decoded, 8));
