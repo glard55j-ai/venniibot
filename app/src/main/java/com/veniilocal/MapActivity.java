@@ -46,7 +46,9 @@ public final class MapActivity extends Activity {
     private static final int MAX_IMPORT_BYTES = 6 * 1024 * 1024;
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private volatile boolean destroyed;
-    private TextView importResult, heading, metadata, statistics, modeLabel, cellLabel, zonesLabel;
+    private TextView importResult, heading, metadata, statistics, modeLabel, cellLabel, zonesLabel, selectedZoneLabel;
+    private LinearLayout zoneChoices;
+    private int selectedZoneIndex = -1;
     private Button importTxtButton, importMapButton;
     private Button rotateBtn, paletteBtn, zoomInBtn, zoomOutBtn, zoomFitBtn, exportBtn;
     private MapPreviewView mapView;
@@ -161,6 +163,11 @@ public final class MapActivity extends Activity {
         add(zoneCard, label("Les étiquettes sont des brouillons. Elles ne sont liées à aucune position ou région réelle.", 12, MUTED, false), 6);
         zonesLabel = label("Chargement des brouillons de zones…", 13, TEXT, false);
         add(zoneCard, zonesLabel, 10);
+        zoneChoices = new LinearLayout(this);
+        zoneChoices.setOrientation(LinearLayout.VERTICAL);
+        add(zoneCard, zoneChoices, 8);
+        selectedZoneLabel = label("Aucune étiquette sélectionnée. Aucun tracé spatial disponible.", 12, WARNING, false);
+        add(zoneCard, selectedZoneLabel, 9);
         Button zones = button(zoneCard, "Gérer les zones dans KOOMA-I");
         zones.setOnClickListener(v -> {
             Intent intent = new Intent(this, KoomaHomeActivity.class);
@@ -239,18 +246,42 @@ public final class MapActivity extends Activity {
     }
 
     private void refreshZones() {
-        if (zonesLabel == null) return;
+        if (zonesLabel == null || zoneChoices == null) return;
         java.util.List<KoomaDraftStore.Draft> list =
             new KoomaDraftStore(this).read(KoomaDraftStore.ZONES);
+        zoneChoices.removeAllViews();
         if (list.isEmpty()) {
-            zonesLabel.setText("Aucune zone en brouillon. Ajoute un nom de pièce depuis l'onglet Carte.");
+            zonesLabel.setText("Aucune zone en brouillon. Ajoute d'abord un nom depuis l'onglet Carte.");
+            selectedZoneIndex = -1;
+            selectedZoneLabel.setText("Aucune zone choisie • sélection cartographique indisponible.");
             return;
         }
-        StringBuilder b = new StringBuilder();
-        b.append(list.size()).append(" zone(s) enregistrée(s) localement :");
-        for (KoomaDraftStore.Draft draft : list)
-            b.append("\n• ").append(draft.name).append(" — ").append(draft.detail);
-        zonesLabel.setText(b.toString());
+        zonesLabel.setText(list.size() + " étiquette(s) locale(s) • touche un nom pour le sélectionner visuellement :");
+        if (selectedZoneIndex >= list.size()) selectedZoneIndex = -1;
+        for (int i = 0; i < list.size(); i++) {
+            final int chosen = i;
+            KoomaDraftStore.Draft draft = list.get(i);
+            boolean active = chosen == selectedZoneIndex;
+            Button chip = new Button(this);
+            chip.setAllCaps(false);
+            chip.setTextSize(13);
+            chip.setText(draft.name + "  •  " + draft.detail);
+            chip.setTextColor(active ? Color.WHITE : DARK_GREEN);
+            chip.setBackground(shape(active ? GREEN : PALE, 12, LINE));
+            chip.setContentDescription("Brouillon " + draft.name
+                + (active ? " sélectionné" : " à sélectionner") + ", aucune zone réelle sur la carte");
+            chip.setOnClickListener(v -> {
+                selectedZoneIndex = chosen;
+                refreshZones();
+            });
+            add(zoneChoices, chip, 6);
+        }
+        if (selectedZoneIndex < 0) {
+            selectedZoneLabel.setText("Aucune étiquette sélectionnée. La sélection ne commande pas le robot.");
+        } else {
+            selectedZoneLabel.setText("Étiquette choisie : " + list.get(selectedZoneIndex).name
+                + ". Aucun contour réel, aucune zone interdite et aucune commande envoyée au robot.");
+        }
     }
 
     @Override protected void onResume() {
