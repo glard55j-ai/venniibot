@@ -28,6 +28,7 @@ jobs:
             tools/MapGridDecoderSelfTest.java \
             app/src/main/java/com/veniilocal/MapGridRasterizer.java \
             tools/MapGridRasterizerSelfTest.java \
+            tools/MapGridExplorerSelfTest.java \
             app/src/main/java/com/veniilocal/MapGridStatistics.java \
             tools/MapGridStatisticsSelfTest.java \
             app/src/main/java/com/veniilocal/MapExportBlocks.java \
@@ -36,6 +37,7 @@ jobs:
           java -cp /tmp/kooma-map-test MapPayloadInspectorSelfTest
           java -cp /tmp/kooma-map-test MapGridDecoderSelfTest
           java -cp /tmp/kooma-map-test MapGridRasterizerSelfTest
+          java -cp /tmp/kooma-map-test MapGridExplorerSelfTest
           java -cp /tmp/kooma-map-test MapGridStatisticsSelfTest
           java -cp /tmp/kooma-map-test MapExportBlocksSelfTest
           java -cp /tmp/kooma-map-test MapSyntheticExportSelfTest
