@@ -1,6 +1,9 @@
-# KOOMA-I — application Android native pour Venii N1 Max (prototype 2.8)
+# KOOMA-I — application Android native pour Venii N1 Max (prototype 2.9)
 
 ## Journal des versions
+
+- **2.9-test (build 13)** : libellés lisibles du code d'état 888 : 2 nettoyage en cours, 3 pause, 4 retour à la base, 11 recharge en cours, 12 charge terminée. Correspondances issues d'essais physiques avec le N1 Max et non d'une documentation officielle. Les autres codes restent bruts ; valeurs brutes et protections du pilotage inchangées.
+
 
 - **2.8-test (build 12)** : historique de 40 transitions de codes d'état réels, avec heure et valeur brute d'alimentation ; journal alimenté par les lectures réelles et par une observation volontaire. En mode réel, l'observation relit l'état connu (888) toutes les 12 secondes pendant au maximum 5 minutes. Aucun ordre de déplacement, aucune transmission Internet ni conservation après fermeture de l'application. Les commandes sont indisponibles pendant l'observation ; celle-ci s'arrête lors du passage de l'application en arrière-plan. Une nouvelle lecture explicite est nécessaire avant de commander. Les transitions plus courtes que la période d'échantillonnage peuvent échapper à l'observation.
 
