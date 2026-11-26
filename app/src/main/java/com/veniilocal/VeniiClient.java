@@ -137,12 +137,18 @@ public final class VeniiClient {
         throw new IOException("Aucune réponse d'état reconnue (888).");
     }
 
-    /** Read-only diagnostic: discovery, auth 67 and known status 888, then listen. */
-    public static LidarReport listenForLidar() {
+    /** Read-only diagnostic: discovery, auth 67 and known status 888, then listen.
+     * Caller chooses a strictly bounded 15 or 45-second observation, never any robot motion.
+     */
+    public static LidarReport listenForLidar() { return listenForLidar(15); }
+
+    public static LidarReport listenForLidar(int seconds) {
+        if (seconds != 15 && seconds != 45)
+            throw new IllegalArgumentException("Durée de diagnostic invalide");
         LidarReport report = new LidarReport();
         try (Session session = openSession(report)) {
             send(session.socket, envelope(STATUS, session.mac));
-            long deadline = System.nanoTime() + 15_000_000_000L;
+            long deadline = System.nanoTime() + seconds * 1_000_000_000L;
             java.io.InputStream input = new java.io.FilterInputStream(session.socket.getInputStream()) {
                 @Override public int read(byte[] b, int off, int len) throws IOException {
                     long remaining = deadline - System.nanoTime();
@@ -157,7 +163,7 @@ public final class VeniiClient {
                     Object reply = new JSONTokener(VeniiFrameCodec.decodeFrame(input, 1048576)).nextValue();
                     report.observe(reply);
                 } catch (SocketTimeoutException timeout) {
-                    report.end = "Fenêtre d’écoute de 15 s terminée (trame partielle éventuelle non comptée).";
+                    report.end = "Fenêtre d’écoute de " + seconds + " s terminée (trame partielle éventuelle non comptée).";
                     return report;
                 } catch (java.io.EOFException eof) {
                     report.end = "Connexion fermée par le robot.";
@@ -174,6 +180,7 @@ public final class VeniiClient {
     public static final class LidarReport {
         private final java.util.TreeMap<Integer, Integer> counts = new java.util.TreeMap<>();
         private final java.util.TreeMap<Integer, Integer> sizes = new java.util.TreeMap<>();
+        private final java.util.TreeMap<Integer, String> kinds = new java.util.TreeMap<>();
         private final java.util.TreeMap<Integer, String> payloads = new java.util.TreeMap<>();
         private int frames, items, omitted;
         private String end = "En cours";
@@ -181,6 +188,27 @@ public final class VeniiClient {
             return id == 1219 || id == 1220 || id == 800062 || id == 800063 || id == 800064 || id == 800065;
         }
         private static boolean mapPayload(int id) { return id == 1219 || id == 1220 || id == 800064; }
+
+        private static boolean profiled(int id) {
+            return candidate(id) || id == 1599 || id == 1600 || id == 1707;
+        }
+
+        /** No content values, coordinates, SSIDs, authentication data or JSON keys are recorded. */
+        private static String safeShape(Object data) {
+            if (data == null || data == JSONObject.NULL) return "absent";
+            if (data instanceof JSONObject)
+                return "objet JSON (" + ((JSONObject)data).length() + " champ(s))";
+            if (data instanceof JSONArray)
+                return "tableau JSON (" + ((JSONArray)data).length() + " élément(s))";
+            if (data instanceof Number) return "nombre";
+            if (data instanceof Boolean) return "booléen";
+            if (data instanceof String) {
+                String value = ((String)data).trim();
+                return value.startsWith("{") || value.startsWith("[")
+                    ? "texte JSON possible" : "texte";
+            }
+            return "type inconnu";
+        }
         private void observe(Object value) {
             frames++;
             if (value instanceof JSONArray) {
@@ -195,10 +223,12 @@ public final class VeniiClient {
             items++;
             if (!counts.containsKey(id) && counts.size() >= 256) { omitted++; return; }
             counts.put(id, counts.getOrDefault(id,0)+1);
-            if (!candidate(id)) return;
+            if (!profiled(id)) return;
             Object content = value.opt("content");
-            String raw = content == null ? "" : String.valueOf(content);
+            String raw = content == null || content == JSONObject.NULL ? "" : String.valueOf(content);
+            kinds.put(id, safeShape(content));
             sizes.put(id, raw.getBytes(StandardCharsets.UTF_8).length);
+            // Raw data are retained ONLY for known candidate map IDs, and exported solely by choice.
             if (mapPayload(id) && raw.length() > 0 && raw.length() <= 500000) payloads.put(id, raw);
         }
         public boolean hasPayload() { return !payloads.isEmpty(); }
@@ -217,13 +247,23 @@ public final class VeniiClient {
                 int count = counts.getOrDefault(id,0);
                 found |= count > 0;
                 b.append("Code ").append(id).append(" : ").append(count);
-                if (sizes.containsKey(id)) b.append(" • dernier contenu : ").append(sizes.get(id)).append(" octets");
+                if (sizes.containsKey(id)) b.append(" • ").append(kinds.get(id))
+                        .append(" • dernier contenu : ").append(sizes.get(id)).append(" octets");
                 b.append("\n");
             }
             b.append(found ? "Codes candidats reçus, interprétation à vérifier." : "Aucun code candidat reçu pendant cet essai. Cela ne prouve pas leur indisponibilité.").append("\n");
+            b.append("Signaux auxiliaires observés (valeurs masquées) :\n");
+            for (int id : new int[]{1599, 1600, 1707}) {
+                b.append(id).append(" : ").append(counts.getOrDefault(id, 0));
+                if (kinds.containsKey(id))
+                    b.append(" • ").append(kinds.get(id))
+                     .append(" • ").append(sizes.get(id)).append(" octets");
+                b.append("\n");
+            }
+            b.append("1600/1707 ne prouvent pas qu'une carte soit disponible.\n");
             b.append("Autres codes : ");
             for (Map.Entry<Integer,Integer> entry : counts.entrySet())
-                if (!candidate(entry.getKey())) b.append(entry.getKey()).append("×").append(entry.getValue()).append(" ");
+                if (!profiled(entry.getKey())) b.append(entry.getKey()).append("×").append(entry.getValue()).append(" ");
             if (omitted>0) b.append(" • éléments non listés : ").append(omitted);
             b.append("\nContenus carte conservés en mémoire : ").append(payloads.size()).append(" (dernière valeur bornée par code).");
             return b.toString();
