@@ -1,0 +1,8 @@
+KOOMA-I • DONNÉES FICTIVES POUR TEST D'IMPORT — AUCUN ROBOT
+Ce fichier ne contient aucune carte de domicile. Il simule un export volontaire.
+Code 1219
+{"width":16,"height":12,"resolution":0.05,"x_min":0,"y_min":0,"map":"8LEAECAwQFBgcICQoLDA0ODwCBgoOEhYaHiImKi4yNjo+BAgMEBQYHCAkKCwwNDg8AAYKDhIWGh4iJiouMjY6PgIIDBAUGBwgJCgsMDQ4PAAECg4SFhoeIiYqLjI2Oj4CBgwQFBgcICQoLDA0ODwABAgOEhYaHiImKi4yNjo+AgYKEBQYHCAkKCwwNDg8AAQIDBIWGh4iJiouMjY6PgIGCg4UGBwgJCgsMDQ4PAAECAwQFhoeIiYqLjI2Oj4CBgoOEg="}
+
+Code 1220
+{"content":"Exemple incomplet : ne constitue pas une carte"}
+
