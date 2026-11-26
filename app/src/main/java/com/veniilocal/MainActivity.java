@@ -35,6 +35,8 @@ public final class MainActivity extends Activity {
     private CheckBox repaired, demoMode;
     private TextView connection, state, power, suction, volume, issue, note, telemetrySummary, dashboardMode, dashboardState, dashboardBattery, dashboardBatteryHint, historyView, diagnostic, demoStatus;
     private View robotPreview, settingsPanel, manualPanel;
+    private android.widget.ProgressBar batteryProgress;
+    private TextView dashboardReadTime, connectionDetail;
     private VeniiClient.Status lastReport;
     private VeniiClient.LidarReport lidarReport;
     private TextView lidarStatus;
@@ -545,12 +547,19 @@ public final class MainActivity extends Activity {
         add(batteryTile, text("BATTERIE", 11, MUTED, true), 0);
         dashboardBattery = text("—", 24, PRIMARY, true);
         add(batteryTile, dashboardBattery, 5);
+        batteryProgress = new android.widget.ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+        batteryProgress.setMax(100);
+        batteryProgress.setProgress(0);
+        batteryProgress.setProgressTintList(android.content.res.ColorStateList.valueOf(ACCENT));
+        batteryProgress.setProgressBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.rgb(60, 78, 94)));
+        add(batteryTile, batteryProgress, 7);
         dashboardBatteryHint = text("En attente de lecture", 12, MUTED, false);
         add(batteryTile, dashboardBatteryHint, 3);
         add(statusTile, text("ÉTAT DU ROBOT", 11, MUTED, true), 0);
         dashboardState = text("En attente", 16, PRIMARY, true);
         add(statusTile, dashboardState, 5);
-        add(statusTile, text("Dernière lecture", 12, MUTED, false), 3);
+        dashboardReadTime = text("Aucune lecture réelle", 12, MUTED, false);
+        add(statusTile, dashboardReadTime, 3);
         tiles.setGravity(Gravity.TOP);
         add(dashboard, tiles, 14);
         add(dashboard, text("Les valeurs réelles sont affichées uniquement après lecture du robot.", 12, MUTED, false), 12);
@@ -568,6 +577,8 @@ public final class MainActivity extends Activity {
         add(connectivity, text("CONNEXION LOCALE", 12, ACCENT, true), 0);
         connection = text("Non connecté", 19, PRIMARY, true);
         add(connectivity, connection, 10);
+        connectionDetail = text("Statut : aucune lecture récente du robot", 12, MUTED, false);
+        add(connectivity, connectionDetail, 5);
         add(connectivity, text("Réseau VENII du robot • 192.168.78.1:9000", 12, MUTED, false), 6);
         btnConnect = button("Connecter et lire l’état", ACCENT, BG);
         add(connectivity, btnConnect, 16);
@@ -732,6 +743,7 @@ public final class MainActivity extends Activity {
         LinearLayout changes = column(18, CARD);
         add(main, changes, 16);
         add(changes, text("VERSION " + appVersion(), 12, ACCENT, true), 0);
+        add(changes, text("3.0 • Jauge de batterie estimée, heure de dernière lecture et statut de fraîcheur de connexion.", 13, PRIMARY, false), 8);
         add(changes, text("2.9 • Affichage lisible des états 2, 3, 4, 11 et 12 sur la base des essais réels. Codes bruts conservés.", 13, PRIMARY, false), 8);
         add(changes, text("2.8 • Historique horodaté des transitions et observation volontaire en lecture seule pendant 5 minutes.", 13, PRIMARY, false), 8);
         add(changes, text("2.7 • Indicateur de batterie estimé (60), états 11/12 provisoires, valeurs brutes conservées.", 13, PRIMARY, false), 8);
@@ -754,6 +766,11 @@ public final class MainActivity extends Activity {
         if (dashboardState != null) dashboardState.setText(message);
         if (dashboardBattery != null) dashboardBattery.setText("—");
         if (dashboardBatteryHint != null) dashboardBatteryHint.setText("Lecture non actualisée");
+        if (batteryProgress != null) batteryProgress.setProgress(0);
+        if (dashboardReadTime != null)
+            dashboardReadTime.setText("Dernière lecture : " +
+                ("Jamais".equals(lastReportTime) ? "aucune" : lastReportTime + " • expirée"));
+        if (connectionDetail != null) connectionDetail.setText("Statut : lecture non actualisée • relire l’état");
         if (telemetrySummary != null) telemetrySummary.setText("Données non actualisées • relire l’état");
         if (diagnostic != null) diagnostic.setText(message + " • données à actualiser.");
     }
@@ -827,11 +844,15 @@ public final class MainActivity extends Activity {
         handler.postDelayed(expireStatus, STATUS_TTL_MS);
         dashboardState.setText(stateLabel(report.generalState));
         dashboardBattery.setText("—");
+        batteryProgress.setProgress(0);
         dashboardBatteryHint.setText("Code 60 non interprétable");
+        dashboardReadTime.setText("Lu à " + clock() + " • valide 60 s");
+        connectionDetail.setText("Statut : réponse reçue du robot • lecture récente");
         try {
             int level = Integer.parseInt(report.powerReport.trim());
             if (level >= 0 && level <= 100) {
                 dashboardBattery.setText(level + " %");
+                batteryProgress.setProgress(level);
                 dashboardBatteryHint.setText("Estimation (code 60)");
             }
         } catch (NumberFormatException ignored) { /* Garder la valeur brute sans inventer de pourcentage. */ }
