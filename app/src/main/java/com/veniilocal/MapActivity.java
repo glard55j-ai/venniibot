@@ -5,11 +5,14 @@ import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.graphics.Paint;
 import android.graphics.RectF;
 import android.net.Uri;
 import android.os.Bundle;
 import android.view.View;
+import android.view.Gravity;
 import android.view.MotionEvent;
 import android.widget.Button;
 import android.widget.LinearLayout;
@@ -28,51 +31,89 @@ import org.json.JSONObject;
  * Imported bytes are deliberately rendered as raw greys, NOT inferred walls.
  */
 public final class MapActivity extends Activity {
-    private static final int BACKGROUND = Color.rgb(9, 19, 32);
-    private static final int TEXT = Color.rgb(220, 233, 240);
-    private static final int MUTED = Color.rgb(164, 183, 201);
-    private static final int WARNING = Color.rgb(255, 191, 106);
+    private static final int BACKGROUND = Color.rgb(249, 251, 250);
+    private static final int SURFACE = Color.WHITE;
+    private static final int PALE = Color.rgb(239, 249, 245);
+    private static final int LINE = Color.rgb(228, 238, 233);
+    private static final int GREEN = Color.rgb(8, 191, 150);
+    private static final int DARK_GREEN = Color.rgb(3, 116, 100);
+    private static final int TEXT = Color.rgb(28, 51, 55);
+    private static final int MUTED = Color.rgb(108, 134, 132);
+    private static final int WARNING = Color.rgb(148, 96, 26);
     private static final int REQUEST_TXT = 407;
     private static final int REQUEST_MAP_JSON = 408;
     private static final int REQUEST_PNG = 409;
     private static final int MAX_IMPORT_BYTES = 6 * 1024 * 1024;
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private volatile boolean destroyed;
-    private TextView importResult, heading, metadata, statistics, modeLabel, cellLabel;
+    private TextView importResult, heading, metadata, statistics, modeLabel, cellLabel, zonesLabel;
     private Button importTxtButton, importMapButton;
     private Button rotateBtn, paletteBtn, zoomInBtn, zoomOutBtn, zoomFitBtn, exportBtn;
     private MapPreviewView mapView;
+    private LinearLayout technicalPanel;
     private byte[] activeCells;
     private int activeWidth, activeHeight, turns, paletteMode;
 
+
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        getWindow().setStatusBarColor(Color.WHITE);
+        getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
+
         ScrollView scroll = new ScrollView(this);
         scroll.setBackgroundColor(BACKGROUND);
+        scroll.setFillViewport(true);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(20), dp(22), dp(20), dp(24));
+        root.setPadding(dp(16), dp(12), dp(16), dp(24));
         scroll.addView(root);
         setContentView(scroll);
 
-        title(root, "KOOMA-I · Cartographie", 24, Color.WHITE);
-        heading = title(root, "DÉMONSTRATION — carte fictive", 16, WARNING);
-        metadata = title(root, "Aucune carte réelle décodée. L'orientation et la signification des octets restent inconnues.", 13, MUTED);
+        LinearLayout header = new LinearLayout(this);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        Button back = new Button(this);
+        back.setText("‹");
+        back.setAllCaps(false);
+        back.setTextSize(28);
+        back.setTextColor(DARK_GREEN);
+        back.setBackground(shape(PALE, 15, LINE));
+        back.setContentDescription("Retour à KOOMA-I");
+        header.addView(back, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        back.setOnClickListener(v -> finish());
+        LinearLayout brand = new LinearLayout(this);
+        brand.setOrientation(LinearLayout.VERTICAL);
+        brand.setPadding(dp(14), 0, 0, 0);
+        TextView title = label("Cartographie", 24, TEXT, true);
+        brand.addView(title);
+        brand.addView(label("KOOMA-I  •  Veniibot N1 Max", 12, MUTED, false));
+        header.addView(brand, new LinearLayout.LayoutParams(0, -2, 1));
+        root.addView(header);
+
+        LinearLayout status = panel(root, 15);
+        heading = label("AUCUNE CARTE RÉELLE", 16, DARK_GREEN, true);
+        add(status, heading, 0);
+        metadata = label("En attente de données • la carte réelle du N1 Max n'est pas validée.", 13, MUTED, false);
+        add(status, metadata, 6);
+
+        LinearLayout mapCard = panel(root, 15);
+        add(mapCard, label("Aperçu de la grille", 18, TEXT, true), 0);
+        add(mapCard, label("La vue ne représente ni murs ni zones reconnues tant que le protocole n'est pas validé.", 12, MUTED, false), 6);
 
         mapView = new MapPreviewView();
-        LinearLayout.LayoutParams mapParams = new LinearLayout.LayoutParams(-1, dp(400));
+        mapView.setBackground(shape(PALE, 18, LINE));
+        LinearLayout.LayoutParams mapParams = new LinearLayout.LayoutParams(-1, dp(350));
         mapParams.topMargin = dp(12);
-        root.addView(mapView, mapParams);
+        mapCard.addView(mapView, mapParams);
+        modeLabel = label("Aperçu en attente • zoom 1×", 12, MUTED, false);
+        add(mapCard, modeLabel, 10);
+        cellLabel = label("Touchez la grille après import pour lire les octets bruts.", 13, TEXT, false);
+        add(mapCard, cellLabel, 6);
 
-        modeLabel = title(root, "Aperçu en attente • zoom 1×", 13, MUTED);
-        cellLabel = title(root, "Touchez une cellule d'une grille pour lire sa valeur brute.", 13, TEXT);
-
-        LinearLayout firstRow = new LinearLayout(this);
-        firstRow.setOrientation(LinearLayout.HORIZONTAL);
-        root.addView(firstRow, new LinearLayout.LayoutParams(-1, -2));
-        zoomOutBtn = smallButton(firstRow, "Zoom −");
+        add(mapCard, label("EXPLORER LA GRILLE", 11, DARK_GREEN, true), 14);
+        LinearLayout firstRow = horizontal(mapCard);
+        zoomOutBtn = smallButton(firstRow, "− Zoom");
         zoomFitBtn = smallButton(firstRow, "Cadrer");
-        zoomInBtn = smallButton(firstRow, "Zoom +");
+        zoomInBtn = smallButton(firstRow, "+ Zoom");
         zoomOutBtn.setOnClickListener(v -> {
             mapView.setZoom(mapView.zoom - 0.5f); updateModeLabel();
         });
@@ -83,60 +124,150 @@ public final class MapActivity extends Activity {
             mapView.setZoom(1f); updateModeLabel();
         });
 
-        LinearLayout secondRow = new LinearLayout(this);
-        secondRow.setOrientation(LinearLayout.HORIZONTAL);
-        root.addView(secondRow, new LinearLayout.LayoutParams(-1, -2));
-        rotateBtn = smallButton(secondRow, "Pivoter 90°");
-        paletteBtn = smallButton(secondRow, "Palette");
-        exportBtn = smallButton(secondRow, "Exporter PNG");
+        LinearLayout secondRow = horizontal(mapCard);
+        rotateBtn = smallButton(secondRow, "Rotation 90°");
+        paletteBtn = smallButton(secondRow, "Couleurs");
+        exportBtn = smallButton(secondRow, "Export PNG");
         rotateBtn.setOnClickListener(v -> {
             if (activeCells == null) return;
-            turns = (turns + 1) % 4; renderActiveGrid();
+            turns = (turns + 1) % 4;
+            renderActiveGrid();
         });
         paletteBtn.setOnClickListener(v -> {
             if (activeCells == null) return;
-            paletteMode = (paletteMode + 1) % 3; renderActiveGrid();
+            paletteMode = (paletteMode + 1) % 3;
+            renderActiveGrid();
         });
         exportBtn.setOnClickListener(v -> confirmExportPng());
         setToolsEnabled(false);
 
-        title(root, "Une grille importée est représentée en niveaux de gris BRUTS. Elle ne permet pas encore de reconnaître les murs, les pièces ou la position du robot.", 13, WARNING);
+        LinearLayout importPanel = panel(root, 15);
+        add(importPanel, label("Charger une carte", 18, TEXT, true), 0);
+        add(importPanel, label("Import volontaire depuis le téléphone. Aucune carte n'est envoyée sur Internet.", 12, MUTED, false), 5);
 
-        Button synthetic = button(root, "Tester une grille synthétique (sans robot)");
+        importMapButton = button(importPanel, "Importer un fichier JSON");
+        importMapButton.setOnClickListener(v ->
+            openDocument(REQUEST_MAP_JSON, new String[]{"application/json", "text/plain", "application/octet-stream"}));
+        importTxtButton = button(importPanel, "Analyser un export LiDAR TXT");
+        importTxtButton.setOnClickListener(v ->
+            openDocument(REQUEST_TXT, new String[]{"text/plain"}));
+        Button synthetic = button(importPanel, "Voir une grille de démonstration");
         synthetic.setOnClickListener(v -> showSyntheticExample());
-
-        importMapButton = button(root, "Importer une carte JSON locale");
-        importMapButton.setOnClickListener(v -> openDocument(REQUEST_MAP_JSON, new String[]{"application/json", "text/plain", "application/octet-stream"}));
-
-        importTxtButton = button(root, "Analyser un export LiDAR TXT");
-        importTxtButton.setOnClickListener(v -> openDocument(REQUEST_TXT, new String[]{"text/plain"}));
-
-        Button reset = button(root, "Revenir à la carte fictive");
+        Button reset = button(importPanel, "Effacer l'aperçu");
         reset.setOnClickListener(v -> showDemo());
 
-        importResult = title(root, "Aucun fichier analysé. Lecture locale uniquement, sans téléchargement ni transfert.", 13, TEXT);
-        statistics = title(root, "Statistiques : en attente d’une grille décodée.", 13, MUTED);
-        title(root, "Format JSON expérimental attendu : champs width, height et map (Base64 d'un bloc LZ4). Champs facultatifs : resolution, x_min, y_min. Aucun fichier n'est enregistré dans l'application.", 12, MUTED);
-        title(root, "Confidentialité : une vraie carte peut révéler le plan du domicile. N'exporte ou ne partage ces fichiers que volontairement.", 12, WARNING);
+        LinearLayout zoneCard = panel(root, 15);
+        add(zoneCard, label("Zones de nettoyage", 18, TEXT, true), 0);
+        add(zoneCard, label("Les étiquettes sont des brouillons. Elles ne sont liées à aucune position ou région réelle.", 12, MUTED, false), 6);
+        zonesLabel = label("Chargement des brouillons de zones…", 13, TEXT, false);
+        add(zoneCard, zonesLabel, 10);
+        Button zones = button(zoneCard, "Gérer les zones dans KOOMA-I");
+        zones.setOnClickListener(v -> {
+            Intent intent = new Intent(this, KoomaHomeActivity.class);
+            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            intent.putExtra("open_tab", 0);
+            startActivity(intent);
+            finish();
+        });
+        add(zoneCard, label("La sélection d'une zone sur la véritable carte sera activée uniquement après validation des coordonnées.", 12, WARNING, false), 7);
+        refreshZones();
 
-        Button back = button(root, "Retour au tableau de bord");
-        back.setOnClickListener(v -> finish());
+        LinearLayout reportCard = panel(root, 15);
+        add(reportCard, label("Résultat de l'analyse", 17, TEXT, true), 0);
+        importResult = label("Aucun fichier analysé. Lecture locale uniquement.", 13, TEXT, false);
+        add(reportCard, importResult, 9);
+        Button technical = button(reportCard, "Afficher les détails techniques");
+        technicalPanel = new LinearLayout(this);
+        technicalPanel.setOrientation(LinearLayout.VERTICAL);
+        technicalPanel.setVisibility(View.GONE);
+        add(reportCard, technicalPanel, 9);
+        technical.setOnClickListener(v -> {
+            boolean expand = technicalPanel.getVisibility() != View.VISIBLE;
+            technicalPanel.setVisibility(expand ? View.VISIBLE : View.GONE);
+            technical.setText(expand ? "Masquer les détails techniques" : "Afficher les détails techniques");
+        });
+        statistics = label("Statistiques : en attente d'une grille décodée.", 13, MUTED, false);
+        add(technicalPanel, statistics, 4);
+        add(technicalPanel, label("Format expérimental : width, height, map (Base64 / LZ4). Métadonnées facultatives : resolution, x_min et y_min.", 12, MUTED, false), 8);
+        add(technicalPanel, label("Une vraie carte peut révéler le plan d'un domicile. Les exports PNG et TXT restent des actions volontaires.", 12, WARNING, false), 8);
 
-        // Only an explicit dashboard action can place this data in one-shot memory.
+        // Only an explicit diagnostic action can leave a one-shot map candidate in memory.
         String candidates = MapCandidateMemory.take();
         if (candidates != null) {
-            importResult.setText("Analyse locale des données de la dernière écoute LiDAR…");
+            importResult.setText("Analyse locale des données reçues pendant la dernière écoute LiDAR…");
             analyzeInBackground(candidates, REQUEST_TXT);
         }
     }
 
-    private Button button(LinearLayout root, String text) {
+    private GradientDrawable shape(int color, int radius, int line) {
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setColor(color);
+        drawable.setCornerRadius(dp(radius));
+        drawable.setStroke(dp(1), line);
+        return drawable;
+    }
+
+    private TextView label(String value, int sp, int color, boolean bold) {
+        TextView t = new TextView(this);
+        t.setText(value);
+        t.setTextSize(sp);
+        t.setTextColor(color);
+        if (bold) t.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        return t;
+    }
+
+    private void add(LinearLayout root, View item, int topMargin) {
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, -2);
+        p.topMargin = dp(topMargin);
+        root.addView(item, p);
+    }
+
+    private LinearLayout panel(LinearLayout root, int topMargin) {
+        LinearLayout view = new LinearLayout(this);
+        view.setOrientation(LinearLayout.VERTICAL);
+        view.setPadding(dp(16), dp(16), dp(16), dp(16));
+        view.setBackground(shape(SURFACE, 21, LINE));
+        add(root, view, topMargin);
+        return view;
+    }
+
+    private LinearLayout horizontal(LinearLayout root) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        add(root, row, 7);
+        return row;
+    }
+
+    private void refreshZones() {
+        if (zonesLabel == null) return;
+        java.util.List<KoomaDraftStore.Draft> list =
+            new KoomaDraftStore(this).read(KoomaDraftStore.ZONES);
+        if (list.isEmpty()) {
+            zonesLabel.setText("Aucune zone en brouillon. Ajoute un nom de pièce depuis l'onglet Carte.");
+            return;
+        }
+        StringBuilder b = new StringBuilder();
+        b.append(list.size()).append(" zone(s) enregistrée(s) localement :");
+        for (KoomaDraftStore.Draft draft : list)
+            b.append("\n• ").append(draft.name).append(" — ").append(draft.detail);
+        zonesLabel.setText(b.toString());
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        refreshZones();
+    }
+
+    private Button button(LinearLayout root, String label) {
         Button b = new Button(this);
-        b.setText(text);
+        b.setText(label);
         b.setAllCaps(false);
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
-        params.topMargin = dp(7);
-        root.addView(b, params);
+        b.setTextSize(14);
+        b.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        b.setTextColor(DARK_GREEN);
+        b.setBackground(shape(PALE, 15, LINE));
+        b.setMinHeight(dp(52));
+        add(root, b, 9);
         return b;
     }
 
@@ -145,8 +276,10 @@ public final class MapActivity extends Activity {
         b.setText(label);
         b.setAllCaps(false);
         b.setTextSize(12);
-        b.setMinHeight(dp(52));
-        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, -2, 1f);
+        b.setTextColor(DARK_GREEN);
+        b.setBackground(shape(PALE, 12, LINE));
+        b.setMinHeight(dp(49));
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, dp(51), 1f);
         p.setMargins(dp(2), dp(3), dp(2), dp(3));
         row.addView(b, p);
         return b;
@@ -234,12 +367,8 @@ public final class MapActivity extends Activity {
     }
 
     private TextView title(LinearLayout root, String value, int sp, int color) {
-        TextView t = new TextView(this);
-        t.setText(value);
-        t.setTextColor(color);
-        t.setTextSize(sp);
-        t.setPadding(0, 0, 0, dp(9));
-        root.addView(t);
+        TextView t = label(value, sp, color, false);
+        add(root, t, 8);
         return t;
     }
 
