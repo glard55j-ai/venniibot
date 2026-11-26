@@ -1,6 +1,9 @@
-# KOOMA-I — application Android native pour Venii N1 Max (prototype 2.9)
+# KOOMA-I — application Android native pour Venii N1 Max (prototype 3.0)
 
 ## Journal des versions
+
+- **3.0-test (build 14)** : jauge graphique de batterie estimée à partir du code 60 si la valeur est comprise entre 0 et 100, heure de dernière lecture et statut distinguant la réponse récente des lectures expirées. Après 60 s sans actualisation, le statut signale des données périmées ; la lecture n'est jamais présentée comme une connexion permanente. Valeurs brutes, boutons et sécurités de pilotage inchangés.
+
 
 - **2.9-test (build 13)** : libellés lisibles du code d'état 888 : 2 nettoyage en cours, 3 pause, 4 retour à la base, 11 recharge en cours, 12 charge terminée. Correspondances issues d'essais physiques avec le N1 Max et non d'une documentation officielle. Les autres codes restent bruts ; valeurs brutes et protections du pilotage inchangées.
 
