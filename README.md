@@ -1,6 +1,9 @@
-# KOOMA-I — application Android native pour Venii N1 Max (prototype 3.1)
+# KOOMA-I — application Android native pour Venii N1 Max (prototype 3.2)
 
 ## Journal des versions
+
+- **3.2-test (build 16)** : aide courte « Consulter l’état n’envoie aucune action », intitulé « Lecture locale, sans Internet », conservation atténuée des dernières valeurs quand une lecture expire après 60 s, statut « Connexion impossible » en cas d’échec, export volontaire de l’historique lisible heure + état (sans codes bruts ni pourcentage). Le lieu du fichier est choisi par l’utilisateur ; confirmation « Historique enregistré dans le dossier choisi ». Les valeurs brutes restent dans les diagnostics et les commandes réelles sont inchangées.
+
 
 - **3.1-test (build 15)** : affichage explicite du mode des commandes (démo ou réel), indication du statut de dernière lecture réelle indépendante de la simulation et du verrouillage après 60 secondes. Export manuel TXT des 40 derniers changements d'état en mémoire, sans Internet ni export automatique. Codes bruts conservés ; les commandes réelles et les protections restent inchangées.
 
