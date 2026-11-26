@@ -27,10 +27,13 @@ jobs:
             app/src/main/java/com/veniilocal/MapGridDecoder.java \
             tools/MapGridDecoderSelfTest.java \
             app/src/main/java/com/veniilocal/MapGridRasterizer.java \
-            tools/MapGridRasterizerSelfTest.java
+            tools/MapGridRasterizerSelfTest.java \
+            app/src/main/java/com/veniilocal/MapGridStatistics.java \
+            tools/MapGridStatisticsSelfTest.java
           java -cp /tmp/kooma-map-test MapPayloadInspectorSelfTest
           java -cp /tmp/kooma-map-test MapGridDecoderSelfTest
           java -cp /tmp/kooma-map-test MapGridRasterizerSelfTest
+          java -cp /tmp/kooma-map-test MapGridStatisticsSelfTest
       - name: Compiler APK debug
         run: gradle --no-daemon :app:assembleDebug
       - uses: actions/upload-artifact@v4
