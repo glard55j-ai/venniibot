@@ -18,6 +18,11 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.13'
+      - name: Tester le lecteur cartographique hors ligne
+        run: |
+          mkdir -p /tmp/kooma-map-test
+          javac -encoding UTF-8 -d /tmp/kooma-map-test app/src/main/java/com/veniilocal/MapPayloadInspector.java tools/MapPayloadInspectorSelfTest.java
+          java -cp /tmp/kooma-map-test MapPayloadInspectorSelfTest
       - name: Compiler APK debug
         run: gradle --no-daemon :app:assembleDebug
       - uses: actions/upload-artifact@v4
