@@ -35,6 +35,8 @@ public final class MainActivity extends Activity {
     private CheckBox repaired, demoMode;
     private TextView connection, state, power, suction, volume, issue, note, telemetrySummary, dashboardMode, dashboardState, historyView, diagnostic, demoStatus;
     private View robotPreview, settingsPanel, manualPanel;
+    private VeniiClient.Status lastReport;
+    private String lastReportTime = "Jamais", lastAttempt = "Aucune tentative réelle", lastCommand = "Aucune commande réelle", lastBefore = "—", lastAfter = "—";
     private DemoMap demoMap;
     private TextView elapsedLabel;
     private long elapsedBefore = 0, startedAt = 0;
@@ -392,6 +394,44 @@ public final class MainActivity extends Activity {
         return section;
     }
 
+    private String diagnosticReport() {
+        StringBuilder r = new StringBuilder();
+        r.append("VENII LOCAL • v").append(appVersion()).append("\n");
+        r.append("Rapport local • ").append(new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss Z", java.util.Locale.FRANCE).format(new java.util.Date())).append("\n");
+        r.append("Android : ").append(android.os.Build.VERSION.SDK_INT).append("\n");
+        r.append("Mode : ").append(demoMode.isChecked() ? "DÉMONSTRATION" : "RÉEL").append("\n");
+        r.append("Dernière tentative réelle : ").append(lastAttempt).append("\n");
+        r.append("Dernière lecture réelle : ").append(lastReportTime).append("\n");
+        r.append("Fraîcheur : ").append(freshStatus() ? "récente" : "absente ou expirée").append("\n");
+        if (lastReport != null) {
+            r.append("État 888 : ").append(lastReport.generalState).append("\n");
+            r.append("Alimentation 60 (brut) : ").append(lastReport.powerReport).append("\n");
+            r.append("Aspiration 1300 (brut) : ").append(lastReport.suction).append("\n");
+            r.append("Volume 1502 (brut) : ").append(lastReport.volume).append("\n");
+            r.append("Erreur 70 (brut) : ").append(lastReport.error).append("\n");
+            r.append("Champs reçus : ").append(lastReport.messageCount).append("\n");
+        } else r.append("Aucune donnée réelle reçue.\n");
+        r.append("Dernier ordre réel : ").append(lastCommand).append("\n");
+        r.append("État avant : ").append(lastBefore).append(" • après : ").append(lastAfter).append("\n");
+        r.append("Un ordre transmis ne confirme pas un mouvement. Valeurs non interprétées. Aucun identifiant réseau ni jeton inclus.");
+        return r.toString();
+    }
+
+    private void showDiagnosticReport() {
+        String report = diagnosticReport();
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("Rapport de diagnostic")
+            .setMessage(report)
+            .setNegativeButton("Fermer", null)
+            .setPositiveButton("Copier", (dialog, which) -> {
+                android.content.ClipboardManager clipboard = (android.content.ClipboardManager)getSystemService(Context.CLIPBOARD_SERVICE);
+                if (clipboard != null) {
+                    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Venii diagnostic", report));
+                    android.widget.Toast.makeText(this,"Rapport copié",android.widget.Toast.LENGTH_SHORT).show();
+                }
+            }).show();
+    }
+
     private void buildUi() {
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
@@ -551,9 +591,14 @@ public final class MainActivity extends Activity {
         Button retry = button("Relire l’état (sans mouvement)", Color.rgb(38,60,80), PRIMARY);
         add(diag, retry, 8);
         retry.setOnClickListener(v -> refresh());
+        Button reportButton = button("Afficher / copier le rapport", ACCENT, BG);
+        add(diag, reportButton, 8);
+        reportButton.setOnClickListener(v -> showDiagnosticReport());
+        add(diag, text("Le rapport sépare les essais réels de la simulation et exclut les jetons et identifiants réseau. Partage manuel uniquement.", 12, MUTED, false), 8);
         LinearLayout changes = column(18, CARD);
         add(main, changes, 16);
         add(changes, text("VERSION " + appVersion(), 12, ACCENT, true), 0);
+        add(changes, text("2.5 • Rapport de diagnostic copiable, états avant/après et résultat de la dernière tentative réelle.", 13, PRIMARY, false), 8);
         add(changes, text("2.4 • Carte et télécommande fictives, chronomètre, préférences démo locales.", 13, PRIMARY, false), 8);
         add(changes, text("2.3 • Réglages de démonstration : aspiration, eau, mode, volume et horaire fictif.", 13, PRIMARY, false), 8);
         add(changes, text("2.2 • Historique horodaté, animation démo, accès rapide et diagnostic local.", 13, PRIMARY, false), 8);
@@ -606,6 +651,7 @@ public final class MainActivity extends Activity {
     private void execute(String message, Task task) {
         if (working) return;
         working = true;
+        lastAttempt = "En cours";
         enableButtons();
         activity(message);
         io.execute(() -> {
@@ -615,11 +661,11 @@ public final class MainActivity extends Activity {
             } catch (Exception e) {
                 String why;
                 if (e instanceof SocketTimeoutException) why = "Délai dépassé. Vérifiez le Wi-Fi VENII.";
-                else if (e instanceof IllegalStateException) why = e.getMessage();
+                else if (e instanceof IllegalStateException) why = "Réseau Wi-Fi indisponible ou état invalide.";
                 else if (e instanceof java.net.ConnectException) why = "Le robot ne répond pas au port 9000.";
                 else if (e instanceof java.io.IOException) why = "Connexion/lecture impossible. Vérifiez le Wi-Fi et l’état du robot.";
                 else why = "Réponse inattendue. Aucune donnée sensible affichée.";
-                runOnUiThread(() -> { invalidateStatus("Connexion non confirmée"); connection.setText("Connexion non confirmée"); diagnostic.setText(why); activity(why + " • résultat d’un ordre éventuel non confirmé."); });
+                runOnUiThread(() -> { lastAttempt = why; invalidateStatus("Connexion non confirmée"); connection.setText("Connexion non confirmée"); diagnostic.setText(why); activity(why + " • résultat d’un ordre éventuel non confirmé."); });
             } finally {
                 runOnUiThread(() -> { working = false; enableButtons(); });
             }
@@ -627,6 +673,9 @@ public final class MainActivity extends Activity {
     }
 
     private void render(VeniiClient.Status report) {
+        lastReport = report;
+        lastReportTime = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss Z", java.util.Locale.FRANCE).format(new java.util.Date());
+        lastAttempt = "Lecture d’état reçue";
         hasStatus = true;
         lastStatusAt = android.os.SystemClock.elapsedRealtime();
         handler.removeCallbacks(expireStatus);
@@ -656,9 +705,13 @@ public final class MainActivity extends Activity {
 
     private void sendStart() {
         if (working || demoMode.isChecked() || !repaired.isChecked() || !freshStatus()) return;
+        lastCommand = "1020 • tentative, résultat non confirmé"; lastBefore = "—"; lastAfter = "—";
         execute("Authentification et état de sécurité, puis un seul ordre 1020…", () -> {
             VeniiClient.StartResult result = VeniiClient.startOnce();
             runOnUiThread(() -> {
+                lastCommand = "1020 • transmis, effet non confirmé";
+                lastBefore = result.before.generalState;
+                lastAfter = result.after == null ? "—" : result.after.generalState;
                 connection.setText("Commande 1020 envoyée • effet à observer");
                 if (result.after != null) {
                     render(result.after);
@@ -667,6 +720,7 @@ public final class MainActivity extends Activity {
                         + ". Vérifiez physiquement le robot.");
                 } else {
                     invalidateStatus("État non actualisé");
+                    lastAttempt = "Ordre transmis, nouvelle lecture indisponible";
                     activity("1020 transmis. Aucune nouvelle lecture d’état. Vérifiez physiquement le robot.");
                 }
 
@@ -686,9 +740,13 @@ public final class MainActivity extends Activity {
 
     private void sendUnverified(int code, String label) {
         if (working || !freshStatus() || !repaired.isChecked() || demoMode.isChecked()) return;
+        lastCommand = code + " • tentative, résultat non confirmé"; lastBefore = "—"; lastAfter = "—";
         execute("Envoi local de " + label + " (" + code + ")…", () -> {
             VeniiClient.StartResult result = VeniiClient.commandOnce(code);
             runOnUiThread(() -> {
+                lastCommand = code + " • transmis, effet non confirmé";
+                lastBefore = result.before.generalState;
+                lastAfter = result.after == null ? "—" : result.after.generalState;
                 connection.setText("Commande " + code + " transmise • résultat à vérifier");
                 if (result.after != null) {
                     render(result.after);
@@ -697,6 +755,7 @@ public final class MainActivity extends Activity {
                         + ". Observez physiquement le robot.");
                 } else {
                     invalidateStatus("État non actualisé");
+                    lastAttempt = "Ordre transmis, nouvelle lecture indisponible";
                     activity(label + " (" + code + ") transmis, mais état ultérieur indisponible. Vérifiez physiquement le robot.");
                 }
             });

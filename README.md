@@ -1,6 +1,8 @@
-# Venii Local — application Android native (prototype 2.4)
+# Venii Local — application Android native (prototype 2.5)
 
 ## Journal des versions
+
+- **2.5-test (build 7)** : rapport de diagnostic affichable et copiable manuellement, avec version, dernière tentative réelle, dernière lecture horodatée, valeurs brutes autorisées et états avant/après la dernière commande. Aucun secret, adresse MAC ou SSID exporté ; aucune transmission automatique. Le protocole de commande reste inchangé.
 
 - **2.4-test (build 6)** : carte de nettoyage fictive, télécommande directionnelle et STOP simulés, chronomètre démo, préférences de démonstration sauvegardées localement lors de l’application des réglages. Aucun nouvel ordre réseau ; aucun horaire réel, aucun secret ni autorisation de pilotage sauvegardés. Les panneaux de simulation sont masqués en mode réel.
 
