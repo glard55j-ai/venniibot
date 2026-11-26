@@ -49,7 +49,7 @@ public final class MainActivity extends Activity {
     private static final long MONITOR_MAX_MS = 5 * 60 * 1000L;
     private static final long MONITOR_DELAY_MS = 12000L;
     private final Runnable monitorTick = () -> readMonitorState();
-    private Button lidarListen, lidarRaw;
+    private Button lidarListen, lidarListenLong, lidarRaw, lidarCopy;
     private String pendingLidarExport;
     private static final int LIDAR_EXPORT_REQUEST = 260;
     private static final int STATE_EXPORT_REQUEST = 261;
@@ -786,16 +786,22 @@ public final class MainActivity extends Activity {
         LinearLayout lidar = column(14, CARD);
         add(main, lidar, 12);
         add(lidar, text("LIDAR • CARTOGRAPHIE EXPÉRIMENTALE", 12, ACCENT, true), 0);
-        add(lidar, text("Écoute 15 s après authentification et demande d’état connue. Aucun ordre LiDAR ni déplacement. À effectuer près du robot, hors démo.", 12, MUTED, false), 8);
+        add(lidar, text("Écoute en lecture seule de 15 s ou 45 s après authentification et demande d’état 888. Aucun ordre LiDAR ni déplacement. À effectuer près du robot, hors démo.", 12, MUTED, false), 8);
         lidarStatus = text("Aucune écoute réelle effectuée • carte indisponible", 13, PRIMARY, false);
         add(lidar, lidarStatus, 10);
-        lidarListen = button("Écouter les données du robot", ACCENT, BG);
+        lidarListen = button("Écoute rapide • 15 secondes", ACCENT, BG);
         add(lidar, lidarListen, 8);
-        lidarListen.setOnClickListener(v -> listenLidar());
+        lidarListen.setOnClickListener(v -> listenLidar(15));
+        lidarListenLong = button("Écoute prolongée • 45 secondes", Color.rgb(38,60,80), PRIMARY);
+        add(lidar, lidarListenLong, 8);
+        lidarListenLong.setOnClickListener(v -> listenLidar(45));
+        lidarCopy = button("Copier le résumé LiDAR (sans données privées)", Color.rgb(38,60,80), PRIMARY);
+        add(lidar, lidarCopy, 8);
+        lidarCopy.setOnClickListener(v -> copyLidarSummary());
         lidarRaw = button("Exporter les données candidates brutes", Color.rgb(38,60,80), PRIMARY);
         add(lidar, lidarRaw, 8);
         lidarRaw.setOnClickListener(v -> exportLidarRaw());
-        add(lidar, text("Le rapport standard ne contient que les codes et tailles. Les données brutes peuvent révéler le plan de votre maison. Conservées en mémoire, jamais envoyées automatiquement.", 12, MUTED, false), 8);
+        add(lidar, text("Le résumé ne contient que les identifiants, types, comptes et tailles (y compris 1599, 1600 et 1707), jamais leurs valeurs ni coordonnées. Les données brutes peuvent révéler le plan du domicile : export manuel uniquement.", 12, MUTED, false), 8);
         LinearLayout changes = column(18, CARD);
         add(main, changes, 16);
         add(changes, text("VERSION " + appVersion(), 12, ACCENT, true), 0);
@@ -843,6 +849,8 @@ public final class MainActivity extends Activity {
     private void enableButtons() {
         btnConnect.setEnabled(!working && !monitorActive);
         if (lidarListen != null) lidarListen.setEnabled(!working && !monitorActive && !demoMode.isChecked());
+        if (lidarListenLong != null) lidarListenLong.setEnabled(!working && !monitorActive && !demoMode.isChecked());
+        if (lidarCopy != null) lidarCopy.setEnabled(!working && lidarReport != null);
         if (lidarRaw != null) lidarRaw.setEnabled(!working && lidarReport != null && lidarReport.hasPayload());
         demoMode.setEnabled(!working && !monitorActive);
         repaired.setEnabled(!working && !monitorActive);
@@ -936,20 +944,35 @@ public final class MainActivity extends Activity {
         enableButtons();
     }
 
-    private void listenLidar() {
-        if (working || demoMode.isChecked()) return;
+    private void listenLidar(int seconds) {
+        if (working || monitorActive || demoMode.isChecked() || (seconds != 15 && seconds != 45)) return;
         lidarReport = null;
-        lidarStatus.setText("Écoute en cours • aucun ordre de mouvement");
+        lidarStatus.setText("Écoute en cours (" + seconds + " s) • aucun ordre de mouvement");
         invalidateStatus("Diagnostic LiDAR • relire l’état ensuite");
-        execute("Diagnostic LiDAR en lecture seule…", () -> {
-            VeniiClient.LidarReport result = VeniiClient.listenForLidar();
+        execute("Diagnostic LiDAR " + seconds + " s en lecture seule…", () -> {
+            VeniiClient.LidarReport result = VeniiClient.listenForLidar(seconds);
             runOnUiThread(() -> {
                 lidarReport = result;
                 lidarStatus.setText(result.summary());
                 lastAttempt = "Diagnostic LiDAR terminé • consulter le rapport";
                 activity("Diagnostic LiDAR terminé • aucun ordre de mouvement envoyé.");
+                enableButtons();
             });
         });
+    }
+
+    private void copyLidarSummary() {
+        if (working || lidarReport == null) return;
+        String summary = "KOOMA-I • Diagnostic LiDAR sans valeurs privées\n"
+                + lidarReport.summary() + "\nRésumé copié à la demande.";
+        android.content.ClipboardManager clipboard =
+                (android.content.ClipboardManager)getSystemService(Context.CLIPBOARD_SERVICE);
+        if (clipboard == null) {
+            android.widget.Toast.makeText(this, "Presse-papiers indisponible", android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
+        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("KOOMA-I LiDAR résumé", summary));
+        android.widget.Toast.makeText(this, "Résumé LiDAR copié, sans données brutes", android.widget.Toast.LENGTH_SHORT).show();
     }
 
     private void exportLidarRaw() {
