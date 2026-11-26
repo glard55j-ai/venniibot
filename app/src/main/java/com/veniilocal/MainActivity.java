@@ -480,12 +480,12 @@ public final class MainActivity extends Activity {
             android.widget.Toast.makeText(this, "Aucun changement d’état à exporter", android.widget.Toast.LENGTH_SHORT).show();
             return;
         }
-        StringBuilder body = new StringBuilder("KOOMA-I • Journal des états réels\\n");
-        body.append("Codes 2/3/4/11/12 : interprétations issues des essais physiques, non documentées officiellement.\\n");
-        body.append("Valeur alimentation brute 60 : pourcentage estimé, non garanti.\\n");
-        body.append("Échantillonnage : les transitions rapides peuvent être manquées.\\n\\n");
+        StringBuilder body = new StringBuilder("KOOMA-I • Journal des états réels\n");
+        body.append("Codes 2/3/4/11/12 : interprétations issues des essais physiques, non documentées officiellement.\n");
+        body.append("Valeur alimentation brute 60 : pourcentage estimé, non garanti.\n");
+        body.append("Échantillonnage : les transitions rapides peuvent être manquées.\n\n");
         java.util.Iterator<String> it = stateTransitions.descendingIterator();
-        while (it.hasNext()) body.append(it.next()).append("\\n");
+        while (it.hasNext()) body.append(it.next()).append("\n");
         pendingStateExport = body.toString();
         Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
