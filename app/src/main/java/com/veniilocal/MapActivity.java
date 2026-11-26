@@ -2,6 +2,11 @@ package com.veniilocal;
 
 import android.app.Activity;
 import android.os.Bundle;
+import android.content.Intent;
+import android.net.Uri;
+import java.io.InputStream;
+import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
@@ -13,6 +18,9 @@ import android.widget.Button;
 /** Offline map UI prototype. No connection to, commands for, or telemetry from the robot. */
 public final class MapActivity extends Activity {
     private static final int BACKGROUND = Color.rgb(9, 19, 32);
+    private static final int IMPORT_REQUEST = 407;
+    private static final int MAX_IMPORT_BYTES = 1024 * 1024;
+    private TextView importResult;
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         LinearLayout root = new LinearLayout(this);
@@ -27,13 +35,47 @@ public final class MapActivity extends Activity {
         mapParams.topMargin = dp(18);
         mapParams.bottomMargin = dp(16);
         root.addView(map, mapParams);
-        title(root, "Prochaine étape : identifier et décoder le format des données cartographiques à partir des diagnostics existants.", 14, Color.rgb(164, 183, 201));
+        title(root, "Analyse hors ligne : un export brut ne prouve pas qu'une carte est disponible.", 14, Color.rgb(164, 183, 201));
+        Button importButton = new Button(this);
+        importButton.setText("Analyser un export TXT");
+        importButton.setAllCaps(false);
+        importButton.setOnClickListener(v -> {
+            Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            intent.setType("text/plain");
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            startActivityForResult(intent, IMPORT_REQUEST);
+        });
+        root.addView(importButton);
+        importResult = new TextView(this);
+        importResult.setText("Aucun fichier analysé. Import manuel, local et sans transmission.");
+        importResult.setTextColor(Color.rgb(164, 183, 201));
+        importResult.setTextSize(13);
+        root.addView(importResult);
         Button back = new Button(this);
         back.setText("Retour au tableau de bord");
         back.setAllCaps(false);
         back.setOnClickListener(v -> finish());
         root.addView(back);
         setContentView(root);
+    }
+    @Override protected void onActivityResult(int request, int result, Intent data) {
+        super.onActivityResult(request, result, data);
+        if (request != IMPORT_REQUEST || result != RESULT_OK || data == null || data.getData() == null) return;
+        Uri uri = data.getData();
+        try (InputStream input = getContentResolver().openInputStream(uri)) {
+            if (input == null) throw new java.io.IOException("Fichier inaccessible");
+            ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+            byte[] buffer = new byte[8192];
+            int n;
+            while ((n = input.read(buffer)) != -1) {
+                if (bytes.size() + n > MAX_IMPORT_BYTES) throw new java.io.IOException("Export trop volumineux (limite 1 Mio)");
+                bytes.write(buffer, 0, n);
+            }
+            String raw = new String(bytes.toByteArray(), StandardCharsets.UTF_8);
+            importResult.setText(MapPayloadInspector.inspect(raw));
+        } catch (Exception error) {
+            importResult.setText("Analyse impossible : " + error.getMessage());
+        }
     }
     private int dp(int value) {
         return (int) (getResources().getDisplayMetrics().density * value + .5f);
