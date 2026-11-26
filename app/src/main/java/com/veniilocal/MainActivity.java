@@ -49,7 +49,7 @@ public final class MainActivity extends Activity {
     private static final long MONITOR_MAX_MS = 5 * 60 * 1000L;
     private static final long MONITOR_DELAY_MS = 12000L;
     private final Runnable monitorTick = () -> readMonitorState();
-    private Button lidarListen, lidarListenLong, lidarRaw, lidarCopy;
+    private Button lidarListen, lidarListenLong, lidarRaw, lidarCopy, lidarOpenMap;
     private String pendingLidarExport;
     private static final int LIDAR_EXPORT_REQUEST = 260;
     private static final int STATE_EXPORT_REQUEST = 261;
@@ -798,6 +798,9 @@ public final class MainActivity extends Activity {
         lidarCopy = button("Copier le résumé LiDAR (sans données privées)", Color.rgb(38,60,80), PRIMARY);
         add(lidar, lidarCopy, 8);
         lidarCopy.setOnClickListener(v -> copyLidarSummary());
+        lidarOpenMap = button("Examiner les données reçues dans Cartographie", ACCENT, BG);
+        add(lidar, lidarOpenMap, 8);
+        lidarOpenMap.setOnClickListener(v -> openLidarCandidates());
         lidarRaw = button("Exporter les données candidates brutes", Color.rgb(38,60,80), PRIMARY);
         add(lidar, lidarRaw, 8);
         lidarRaw.setOnClickListener(v -> exportLidarRaw());
@@ -851,6 +854,8 @@ public final class MainActivity extends Activity {
         if (lidarListen != null) lidarListen.setEnabled(!working && !monitorActive && !demoMode.isChecked());
         if (lidarListenLong != null) lidarListenLong.setEnabled(!working && !monitorActive && !demoMode.isChecked());
         if (lidarCopy != null) lidarCopy.setEnabled(!working && lidarReport != null);
+        if (lidarOpenMap != null) lidarOpenMap.setEnabled(
+                !working && lidarReport != null && lidarReport.hasPayload());
         if (lidarRaw != null) lidarRaw.setEnabled(!working && lidarReport != null && lidarReport.hasPayload());
         demoMode.setEnabled(!working && !monitorActive);
         repaired.setEnabled(!working && !monitorActive);
@@ -973,6 +978,28 @@ public final class MainActivity extends Activity {
         }
         clipboard.setPrimaryClip(android.content.ClipData.newPlainText("KOOMA-I LiDAR résumé", summary));
         android.widget.Toast.makeText(this, "Résumé LiDAR copié, sans données brutes", android.widget.Toast.LENGTH_SHORT).show();
+    }
+
+    private void openLidarCandidates() {
+        if (working || lidarReport == null || !lidarReport.hasPayload()) {
+            android.widget.Toast.makeText(this,
+                "Aucune donnée de carte candidate reçue lors de cette écoute",
+                android.widget.Toast.LENGTH_LONG).show();
+            return;
+        }
+        String candidates = lidarReport.rawPayloads();
+        if (!MapCandidateMemory.offer(candidates)) {
+            android.widget.Toast.makeText(this, "Données trop volumineuses pour l'analyse locale",
+                android.widget.Toast.LENGTH_LONG).show();
+            return;
+        }
+        try {
+            startActivity(new Intent(this, MapActivity.class));
+        } catch (Exception failure) {
+            MapCandidateMemory.clear();
+            android.widget.Toast.makeText(this, "Impossible d'ouvrir la cartographie",
+                android.widget.Toast.LENGTH_LONG).show();
+        }
     }
 
     private void exportLidarRaw() {
