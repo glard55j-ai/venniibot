@@ -1,6 +1,6 @@
 package com.veniilocal;
 
-/** Offline read-only inspection of manually exported LiDAR candidates. */
+/** Offline, read-only summary of exported LiDAR candidates. No real map format is assumed. */
 public final class MapPayloadInspector {
     private MapPayloadInspector() {}
 
@@ -10,39 +10,53 @@ public final class MapPayloadInspector {
         }
         String normalized = input.replace("\r\n", "\n").replace('\r', '\n');
         int[] ids = {1219, 1220, 800064};
-        StringBuilder result = new StringBuilder(
-            "Analyse locale, sans envoi réseau. Carte réelle non décodée.\n");
-        boolean found = false;
-        for (int id : ids) {
-            String marker = "Code " + id + "\n";
-            int markerStart = normalized.indexOf(marker);
-            if (markerStart < 0 && normalized.startsWith("Code " + id + "\n")) {
-                markerStart = 0;
+        int[] sizes = new int[ids.length];
+        int[] blocks = new int[ids.length];
+        boolean[] jsonLike = new boolean[ids.length];
+        String[] lines = normalized.split("\n", -1);
+        int current = -1;
+        StringBuilder payload = new StringBuilder();
+        for (String line : lines) {
+            int matching = -1;
+            for (int i = 0; i < ids.length; i++) {
+                if (line.equals("Code " + ids[i])) { matching = i; break; }
             }
-            if (markerStart < 0) {
-                result.append("Code ").append(id).append(" : absent\n");
-                continue;
+            if (matching >= 0) {
+                if (current >= 0) record(payload, current, sizes, jsonLike);
+                current = matching;
+                blocks[current]++;
+                payload.setLength(0);
+            } else if (current >= 0) {
+                if (payload.length() > 0) payload.append('\n');
+                payload.append(line);
             }
-            found = true;
-            int start = markerStart + marker.length();
-            int end = normalized.length();
-            for (int other : ids) {
-                int next = normalized.indexOf("\nCode " + other + "\n", start);
-                if (next >= 0 && next < end) end = next;
-            }
-            String payload = normalized.substring(start, end).trim();
-            result.append("Code ").append(id).append(" : ")
-                .append(payload.length()).append(" caractères");
-            String shape = "format inconnu";
-            if (payload.startsWith("{") && payload.endsWith("}")) {
-                shape = "objet JSON possible";
-            } else if (payload.startsWith("[") && payload.endsWith("]")) {
-                shape = "tableau JSON possible";
-            }
-            result.append(" • ").append(shape).append("\n");
         }
-        if (!found) result.append("Aucun bloc candidat reconnu dans ce fichier.\n");
-        result.append("Aucune image de carte ne peut encore être produite de façon fiable.");
+        if (current >= 0) record(payload, current, sizes, jsonLike);
+
+        StringBuilder result = new StringBuilder(
+            "Analyse locale uniquement. Aucune carte réelle décodée.\n");
+        boolean found = false;
+        for (int i = 0; i < ids.length; i++) {
+            result.append("Code ").append(ids[i]).append(" : ");
+            if (blocks[i] == 0) {
+                result.append("absent\n");
+            } else {
+                found = true;
+                result.append(blocks[i]).append(" bloc(s), dernier contenu : ")
+                    .append(sizes[i]).append(" caractères • ")
+                    .append(jsonLike[i] ? "JSON possible" : "format non identifié")
+                    .append("\n");
+            }
+        }
+        if (!found) result.append("Aucun bloc candidat reconnu.\n");
+        result.append("Aucun contenu brut affiché ou transmis. La cartographie reste expérimentale.");
         return result.toString();
+    }
+
+    private static void record(StringBuilder payload, int index, int[] sizes, boolean[] jsonLike) {
+        String value = payload.toString().trim();
+        sizes[index] = value.length();
+        jsonLike[index] = (value.startsWith("{") && value.endsWith("}"))
+            || (value.startsWith("[") && value.endsWith("]"));
     }
 }
