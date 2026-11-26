@@ -2,7 +2,7 @@
 
 ## Journal des versions
 
-- **4.0-map-preview (build 17), branche `kooma-cartographie-v4` uniquement** : nouvel écran Cartographie affichant une carte géométrique fictive en mode démonstration, sans liaison au robot. Le diagnostic LiDAR antérieur reste inchangé, aucun décodage de carte réelle n'est revendiqué. Aucun nouvel ordre réseau ou mouvement. Base dérivée de la 3.2-test.
+- **4.0-map-preview (build 17), branche `kooma-cartographie-v4` uniquement** : nouvel écran Cartographie affichant une carte géométrique fictive en mode démonstration, sans liaison au robot. Le diagnostic LiDAR antérieur reste inchangé, aucun décodage de carte réelle n'est revendiqué. Aucun nouvel ordre réseau ou mouvement. Import manuel d'un export TXT LiDAR jusqu'à 1 Mio et analyse hors ligne des blocs candidats 1219, 1220, 800064 ; aucune carte réelle reconstruite. Base dérivée de la 3.2-test.
 
 
 - **3.2-test (build 16)** : aide courte « Consulter l’état n’envoie aucune action », intitulé « Lecture locale, sans Internet », conservation atténuée des dernières valeurs quand une lecture expire après 60 s, statut « Connexion impossible » en cas d’échec, export volontaire de l’historique lisible heure + état (sans codes bruts ni pourcentage). Le lieu du fichier est choisi par l’utilisateur ; confirmation « Historique enregistré dans le dossier choisi ». Les valeurs brutes restent dans les diagnostics et les commandes réelles sont inchangées.
