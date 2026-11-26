@@ -2,7 +2,7 @@ name: Construire APK Venii Local
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, venii-local-v2]
 jobs:
   android-debug-apk:
     runs-on: ubuntu-latest
