@@ -677,7 +677,7 @@ public final class MapActivity extends Activity {
 
         @Override protected void onDraw(Canvas c) {
             super.onDraw(c);
-            c.drawColor(Color.rgb(21, 37, 55));
+            c.drawColor(PALE);
             if (previewBitmap != null) {
                 float scale = Math.min((getWidth() - dp(12)) / (float) previewBitmap.getWidth(),
                                        (getHeight() - dp(12)) / (float) previewBitmap.getHeight());
@@ -694,24 +694,32 @@ public final class MapActivity extends Activity {
                 c.restore();
                 return;
             }
-            float scale = Math.min(getWidth() / 320f, getHeight() / 400f);
-            c.save();
-            c.translate((getWidth() - 320 * scale) / 2f, (getHeight() - 400 * scale) / 2f);
-            c.scale(scale, scale);
-            paint.setColor(Color.rgb(72, 102, 120));
-            c.drawRect(35, 38, 279, 352, paint);
-            paint.setColor(Color.rgb(21, 37, 55));
-            c.drawRect(44, 48, 270, 343, paint);
-            paint.setColor(Color.rgb(90, 135, 149));
-            c.drawRect(44, 190, 270, 199, paint);
-            c.drawRect(170, 48, 179, 190, paint);
-            c.drawRect(125, 199, 134, 343, paint);
-            paint.setColor(Color.rgb(59, 220, 177));
-            c.drawCircle(91, 265, 10, paint);
+            // Empty-state illustration only: no invented floor plan or robot position.
+            float cx = getWidth() / 2f, cy = getHeight() / 2f;
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(Color.rgb(222, 239, 230));
+            for (int x = dp(26); x < getWidth(); x += dp(26))
+                for (int y = dp(23); y < getHeight(); y += dp(26))
+                    c.drawCircle(x, y, dp(1.15f), paint);
             paint.setColor(Color.WHITE);
-            paint.setTextSize(15f);
-            c.drawText("CARTE FICTIVE", 90, 22, paint);
-            c.restore();
+            c.drawCircle(cx, cy - dp(40), dp(70), paint);
+            paint.setColor(GREEN);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(dp(4));
+            c.drawRoundRect(cx - dp(30), cy - dp(70), cx + dp(30),
+                            cy - dp(10), dp(12), dp(12), paint);
+            c.drawLine(cx - dp(23), cy - dp(30), cx + dp(23), cy - dp(30), paint);
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(TEXT);
+            paint.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.BOLD));
+            paint.setTextSize(dp(16));
+            String line = "AUCUNE CARTE IMPORTÉE";
+            c.drawText(line, cx - paint.measureText(line) / 2f, cy + dp(70), paint);
+            paint.setTypeface(Typeface.DEFAULT);
+            paint.setColor(MUTED);
+            paint.setTextSize(dp(12));
+            String help = "Importez une grille ou testez la démo";
+            c.drawText(help, cx - paint.measureText(help) / 2f, cy + dp(94), paint);
         }
     }
 
