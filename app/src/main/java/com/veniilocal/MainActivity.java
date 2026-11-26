@@ -458,7 +458,7 @@ public final class MainActivity extends Activity {
             stateTransitions.addFirst(entry);
             while (stateTransitions.size() > 40) stateTransitions.removeLast();
             if (stateHistoryView != null)
-                stateHistoryView.setText(android.text.TextUtils.join("\\n\\n", stateTransitions));
+                stateHistoryView.setText(android.text.TextUtils.join("\n\n", stateTransitions));
             lastObservedState = code;
         }
     }
