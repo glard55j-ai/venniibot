@@ -121,6 +121,13 @@ public final class MapActivity extends Activity {
 
         Button back = button(root, "Retour au tableau de bord");
         back.setOnClickListener(v -> finish());
+
+        // Only an explicit dashboard action can place this data in one-shot memory.
+        String candidates = MapCandidateMemory.take();
+        if (candidates != null) {
+            importResult.setText("Analyse locale des données de la dernière écoute LiDAR…");
+            analyzeInBackground(candidates, REQUEST_TXT);
+        }
     }
 
     private Button button(LinearLayout root, String text) {
@@ -261,72 +268,93 @@ public final class MapActivity extends Activity {
         importMapButton.setEnabled(false);
         io.execute(() -> {
             try {
-                String raw = readBounded(uri);
-                DecodedMap decoded = null;
-                String message;
-                if (request == REQUEST_TXT) {
-                    String report = MapPayloadInspector.inspect(raw);
-                    java.util.List<MapExportBlocks.Block> blocks = MapExportBlocks.extract(raw);
-                    int invalidCandidates = 0;
-                    int decodedId = -1;
-                    for (MapExportBlocks.Block block : blocks) {
-                        try {
-                            DecodedMap match = decodeDocument(block.payload);
-                            if (match != null) {
-                                decoded = match;
-                                decodedId = block.id;
-                                break;
-                            }
-                        } catch (Exception malformed) {
-                            // A candidate may contain unknown/non-map data; do not claim it is a map.
-                            invalidCandidates++;
-                        }
-                    }
-                    if (decoded != null) {
-                        message = report + "\n\nGrille Base64/LZ4 complète repérée dans le bloc "
-                                + decodedId + " et décodée localement. Valeurs brutes seulement.";
-                    } else {
-                        message = report + "\n\nAucune grille complète et décodable avec width, height et map "
-                                + "dans cet export. " + blocks.size() + " bloc(s) analysé(s)"
-                                + (invalidCandidates > 0
-                                ? ", dont " + invalidCandidates + " non compatible(s)." : ".")
-                                + "\nCela ne prouve pas que le robot n'a pas de carte.";
-                    }
-                } else {
-                    decoded = decodeDocument(raw);
-                    if (decoded == null)
-                        throw new IllegalArgumentException("Aucun objet de carte complet (width, height, map) trouvé dans ce JSON");
-                    message = "Décodage Base64/LZ4 terminé sur un fichier choisi localement.";
-                }
-                final DecodedMap finalDecoded = decoded;
-                final String resultMessage = message;
-                runOnUiThread(() -> {
-                    if (destroyed) return;
-                    if (finalDecoded != null) {
-                        setActiveGrid(finalDecoded.cells, finalDecoded.width, finalDecoded.height);
-                        statistics.setText(finalDecoded.analysis);
-                        heading.setText("GRILLE DÉCODÉE — pas une carte interprétée");
-                        metadata.setText(finalDecoded.info);
-                        importResult.setText(resultMessage + "\n0 = noir, 255 = blanc. "
-                                + "Le sens des valeurs et l'orientation sont inconnus.");
-                    } else {
-                        importResult.setText(resultMessage);
-                    }
-                    unlock();
-                });
+                processImportedData(readBounded(uri), request);
             } catch (Exception error) {
-                String message = error instanceof IllegalArgumentException
-                    ? error.getMessage() : "Fichier non compatible ou illisible";
-                runOnUiThread(() -> {
-                    if (destroyed) return;
-                    importResult.setText("Import impossible : " + message
-                        + ". L'affichage précédent est conservé.");
-                    unlock();
-                });
+                showImportError(error);
             }
         });
     }
 
+    private void analyzeInBackground(String raw, int request) {
+        importTxtButton.setEnabled(false);
+        importMapButton.setEnabled(false);
+        io.execute(() -> {
+            try {
+                processImportedData(raw, request);
+            } catch (Exception error) {
+                showImportError(error);
+            }
+        });
+    }
+
+    /** Shared processing for voluntary file imports and one-shot in-memory handoffs. */
+    private void processImportedData(String raw, int request) throws Exception {
+        DecodedMap decoded = null;
+        String message;
+        if (request == REQUEST_TXT) {
+            String report = MapPayloadInspector.inspect(raw);
+            java.util.List<MapExportBlocks.Block> blocks = MapExportBlocks.extract(raw);
+            int invalidCandidates = 0;
+            int decodedId = -1;
+            for (MapExportBlocks.Block block : blocks) {
+                try {
+                    DecodedMap match = decodeDocument(block.payload);
+                    if (match != null) {
+                        decoded = match;
+                        decodedId = block.id;
+                        break;
+                    }
+                } catch (Exception malformed) {
+                    // Map candidates are not necessarily structured MapEntity data.
+                    invalidCandidates++;
+                }
+            }
+            if (decoded != null) {
+                message = report + "\n\nGrille Base64/LZ4 décodable trouvée dans le bloc "
+                        + decodedId + ". Les octets ne sont pas interprétés comme des murs.";
+            } else {
+                message = report + "\n\nAucune grille complète et décodable dans cet échantillon. "
+                        + blocks.size() + " bloc(s) candidat(s) examiné(s)"
+                        + (invalidCandidates > 0
+                           ? ", " + invalidCandidates + " format(s) incompatible(s)." : ".")
+                        + "\nIl peut exister une carte transmise par un autre canal.";
+            }
+        } else {
+            decoded = decodeDocument(raw);
+            if (decoded == null)
+                throw new IllegalArgumentException(
+                    "Aucun objet de carte complet (width, height, map) trouvé dans le JSON");
+            message = "Données Base64/LZ4 décodées depuis un fichier local.";
+        }
+        final DecodedMap finalDecoded = decoded;
+        final String resultMessage = message;
+        runOnUiThread(() -> {
+            if (destroyed) return;
+            if (finalDecoded != null) {
+                setActiveGrid(finalDecoded.cells, finalDecoded.width, finalDecoded.height);
+                statistics.setText(finalDecoded.analysis);
+                heading.setText("GRILLE DÉCODÉE — sens des octets inconnu");
+                metadata.setText(finalDecoded.info);
+                importResult.setText(resultMessage
+                        + "\n0 = noir, 255 = blanc en mode gris brut. "
+                        + "Orientation physique et valeurs non validées.");
+            } else {
+                importResult.setText(resultMessage);
+            }
+            unlock();
+        });
+    }
+
+    private void showImportError(Exception error) {
+        String message = error instanceof IllegalArgumentException
+            ? error.getMessage() : "Fichier ou données non compatibles";
+        runOnUiThread(() -> {
+            if (destroyed) return;
+            importResult.setText("Analyse impossible : " + message
+                    + ". L'affichage précédent est conservé.");
+            unlock();
+        });
+    }
 
     private static final class DecodedMap {
         final byte[] cells;
