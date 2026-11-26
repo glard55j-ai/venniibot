@@ -38,6 +38,15 @@ public final class MainActivity extends Activity {
     private VeniiClient.Status lastReport;
     private VeniiClient.LidarReport lidarReport;
     private TextView lidarStatus;
+    private TextView stateHistoryView, monitorStatus;
+    private Button monitorButton;
+    private final java.util.ArrayDeque<String> stateTransitions = new java.util.ArrayDeque<>();
+    private String lastObservedState = null;
+    private boolean monitorActive = false;
+    private long monitorStartedAt = 0L;
+    private static final long MONITOR_MAX_MS = 5 * 60 * 1000L;
+    private static final long MONITOR_DELAY_MS = 12000L;
+    private final Runnable monitorTick = () -> readMonitorState();
     private Button lidarListen, lidarRaw;
     private String pendingLidarExport;
     private static final int LIDAR_EXPORT_REQUEST = 260;
@@ -438,6 +447,67 @@ public final class MainActivity extends Activity {
             }).show();
     }
 
+    private void recordStateTransition(VeniiClient.Status report) {
+        String code = report.generalState;
+        if (code == null || code.trim().isEmpty()) return;
+        if (!code.equals(lastObservedState)) {
+            String label = "11".equals(code) ? "recharge probable"
+                : "12".equals(code) ? "charge terminée probable" : "code non interprété";
+            String entry = clock() + " • État " + code + " (" + label + ")"
+                + " • alimentation brute " + report.powerReport;
+            stateTransitions.addFirst(entry);
+            while (stateTransitions.size() > 40) stateTransitions.removeLast();
+            if (stateHistoryView != null)
+                stateHistoryView.setText(android.text.TextUtils.join("\\n\\n", stateTransitions));
+            lastObservedState = code;
+        }
+    }
+
+    private void stopMonitor(String reason) {
+        monitorActive = false;
+        handler.removeCallbacks(monitorTick);
+        if (monitorButton != null) monitorButton.setText("Démarrer l’observation (5 min)");
+        if (monitorStatus != null) monitorStatus.setText(reason);
+        if (btnConnect != null) enableButtons();
+    }
+
+    private void readMonitorState() {
+        if (!monitorActive) return;
+        if (android.os.SystemClock.elapsedRealtime() - monitorStartedAt >= MONITOR_MAX_MS) {
+            stopMonitor("Observation terminée (5 min maximum).");
+            return;
+        }
+        if (working) {
+            handler.postDelayed(monitorTick, MONITOR_DELAY_MS);
+            return;
+        }
+        io.execute(() -> {
+            VeniiClient.Status observed = null;
+            String failure = null;
+            try {
+                bindToWifiIfAvailable();
+                observed = VeniiClient.readStatus(); // Lecture 888 uniquement, aucun ordre moteur
+            } catch (Exception e) {
+                failure = "Lecture impossible : " + e.getClass().getSimpleName();
+            }
+            final VeniiClient.Status report = observed;
+            final String error = failure;
+            runOnUiThread(() -> {
+                if (!monitorActive) return;
+                if (report != null) {
+                    recordStateTransition(report);
+                    monitorStatus.setText("Observation active • dernière lecture à " + clock()
+                        + " • état brut " + report.generalState
+                        + " • alimentation " + report.powerReport);
+                } else monitorStatus.setText("Observation active • " + error);
+                long elapsed = android.os.SystemClock.elapsedRealtime() - monitorStartedAt;
+                if (elapsed >= MONITOR_MAX_MS)
+                    stopMonitor("Observation terminée. Les données sont conservées pour la session.");
+                else handler.postDelayed(monitorTick, MONITOR_DELAY_MS);
+            });
+        });
+    }
+
     private void buildUi() {
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
@@ -590,6 +660,41 @@ public final class MainActivity extends Activity {
         add(logs, clearHistory, 8);
         clearHistory.setOnClickListener(v -> { history.clear(); historyView.setText("Aucun événement"); });
         add(main, readings, 12);
+        LinearLayout observation = column(14, CARD);
+        add(main, observation, 12);
+        add(observation, text("HISTORIQUE DES ÉTATS RÉELS", 12, ACCENT, true), 0);
+        add(observation, text("Chaque changement de code est horodaté. Observation facultative : lecture seule toutes les 12 s, pendant 5 min maximum, écran ouvert. Aucun ordre de déplacement ; aucune donnée envoyée sur Internet.", 12, MUTED, false), 8);
+        monitorStatus = text("Observation arrêtée. Relire l’état ou lancer l’observation.", 13, MUTED, false);
+        add(observation, monitorStatus, 10);
+        monitorButton = button("Démarrer l’observation (5 min)", ACCENT, BG);
+        add(observation, monitorButton, 9);
+        monitorButton.setOnClickListener(v -> {
+            if (monitorActive) {
+                stopMonitor("Observation arrêtée manuellement.");
+                return;
+            }
+            if (demoMode.isChecked() || working) {
+                monitorStatus.setText("Désactivez la démo et terminez toute commande avant d’observer.");
+                return;
+            }
+            monitorActive = true;
+            monitorStartedAt = android.os.SystemClock.elapsedRealtime();
+            monitorButton.setText("Arrêter l’observation");
+            invalidateStatus("Observation en lecture seule • relire l’état avant de commander");
+            enableButtons();
+            monitorStatus.setText("Observation démarrée • lecture en cours");
+            handler.post(monitorTick);
+        });
+        stateHistoryView = text("Aucun changement d’état enregistré.", 12, PRIMARY, false);
+        add(observation, stateHistoryView, 12);
+        Button clearStates = button("Effacer les états enregistrés", Color.rgb(38,60,80), PRIMARY);
+        add(observation, clearStates, 10);
+        clearStates.setOnClickListener(v -> {
+            stateTransitions.clear();
+            lastObservedState = null;
+            stateHistoryView.setText("Aucun changement d’état enregistré.");
+        });
+        add(observation, text("Historique limité à 40 transitions, conservé uniquement en mémoire jusqu’à la fermeture de l’application. Les changements plus rapides que 12 s peuvent être manqués. Les lectures d’observation n’autorisent jamais les commandes.", 12, MUTED, false), 8);
         LinearLayout diag = column(14, CARD);
         add(main, diag, 12);
         add(diag, text("DIAGNOSTIC LOCAL", 12, ACCENT, true), 0);
@@ -619,6 +724,7 @@ public final class MainActivity extends Activity {
         LinearLayout changes = column(18, CARD);
         add(main, changes, 16);
         add(changes, text("VERSION " + appVersion(), 12, ACCENT, true), 0);
+        add(changes, text("2.8 • Historique horodaté des transitions et observation volontaire en lecture seule pendant 5 minutes.", 13, PRIMARY, false), 8);
         add(changes, text("2.7 • Indicateur de batterie estimé (60), états 11/12 provisoires, valeurs brutes conservées.", 13, PRIMARY, false), 8);
         add(changes, text("2.6 • Écoute cartographie/LiDAR en lecture seule, codes et tailles, export brut volontaire.", 13, PRIMARY, false), 8);
         add(changes, text("2.5.2 • Nouveau nom KOOMA-I dans Android et dans l’application.", 13, PRIMARY, false), 8);
@@ -648,12 +754,12 @@ public final class MainActivity extends Activity {
     }
 
     private void enableButtons() {
-        btnConnect.setEnabled(!working);
-        if (lidarListen != null) lidarListen.setEnabled(!working && !demoMode.isChecked());
+        btnConnect.setEnabled(!working && !monitorActive);
+        if (lidarListen != null) lidarListen.setEnabled(!working && !monitorActive && !demoMode.isChecked());
         if (lidarRaw != null) lidarRaw.setEnabled(!working && lidarReport != null && lidarReport.hasPayload());
-        demoMode.setEnabled(!working);
-        repaired.setEnabled(!working);
-        boolean ready = !working && (demoMode.isChecked() || (freshStatus() && repaired.isChecked()));
+        demoMode.setEnabled(!working && !monitorActive);
+        repaired.setEnabled(!working && !monitorActive);
+        boolean ready = !working && !monitorActive && (demoMode.isChecked() || (freshStatus() && repaired.isChecked()));
         btnStart.setEnabled(ready);
         btnPause.setEnabled(ready);
         btnResume.setEnabled(ready);
@@ -702,6 +808,7 @@ public final class MainActivity extends Activity {
     }
 
     private void render(VeniiClient.Status report) {
+        recordStateTransition(report);
         lastReport = report;
         lastReportTime = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss Z", java.util.Locale.FRANCE).format(new java.util.Date());
         lastAttempt = "Lecture d’état reçue";
@@ -857,12 +964,14 @@ public final class MainActivity extends Activity {
     }
 
     @Override protected void onStop() {
+        stopMonitor("Observation arrêtée : application en arrière-plan.");
         pauseDemoTimer();
         stopDemoAnimation();
         super.onStop();
     }
 
     @Override protected void onDestroy() {
+        stopMonitor("Observation arrêtée.");
         pauseDemoTimer();
         stopDemoAnimation();
         handler.removeCallbacks(expireStatus);
