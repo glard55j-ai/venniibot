@@ -73,7 +73,15 @@ public final class KoomaHomeActivity extends Activity {
         getWindow().setNavigationBarColor(Color.BLACK);
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
         renderShell();
-        selectTab(2);
+        int openingTab = getIntent().getIntExtra("open_tab", 2);
+        selectTab(openingTab >= 0 && openingTab <= 4 ? openingTab : 2);
+    }
+
+    @Override protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        int openingTab = intent.getIntExtra("open_tab", selectedTab);
+        if (openingTab >= 0 && openingTab <= 4) selectTab(openingTab);
     }
 
     private int dp(float n) {
@@ -623,6 +631,9 @@ public final class KoomaHomeActivity extends Activity {
     @Override protected void onResume() {
         super.onResume();
         expireStatus.run();
+        // Reflect any changes to local zone drafts after returning from Cartographie.
+        if (contents != null && (selectedTab == 0 || selectedTab == 2))
+            selectTab(selectedTab);
     }
 
     @Override protected void onDestroy() {
