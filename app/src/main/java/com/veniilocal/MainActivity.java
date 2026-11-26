@@ -598,6 +598,7 @@ public final class MainActivity extends Activity {
         LinearLayout changes = column(18, CARD);
         add(main, changes, 16);
         add(changes, text("VERSION " + appVersion(), 12, ACCENT, true), 0);
+        add(changes, text("2.5.1 • Nouvelle icône KOOMA-I.", 13, PRIMARY, false), 8);
         add(changes, text("2.5 • Rapport de diagnostic copiable, états avant/après et résultat de la dernière tentative réelle.", 13, PRIMARY, false), 8);
         add(changes, text("2.4 • Carte et télécommande fictives, chronomètre, préférences démo locales.", 13, PRIMARY, false), 8);
         add(changes, text("2.3 • Réglages de démonstration : aspiration, eau, mode, volume et horaire fictif.", 13, PRIMARY, false), 8);

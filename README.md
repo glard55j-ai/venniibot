@@ -1,6 +1,8 @@
-# Venii Local — application Android native (prototype 2.5)
+# Venii Local — application Android native (prototype 2.5.1)
 
 ## Journal des versions
+
+- **2.5.1-test (build 8)** : nouvelle icône KOOMA-I fournie par l’utilisateur, redimensionnée à 192 × 192 pixels. Le nom système Venii Local, l’identifiant d’application et le protocole sont inchangés.
 
 - **2.5-test (build 7)** : rapport de diagnostic affichable et copiable manuellement, avec version, dernière tentative réelle, dernière lecture horodatée, valeurs brutes autorisées et états avant/après la dernière commande. Aucun secret, adresse MAC ou SSID exporté ; aucune transmission automatique. Le protocole de commande reste inchangé.
 
