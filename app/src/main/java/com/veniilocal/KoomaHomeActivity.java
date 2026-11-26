@@ -400,7 +400,7 @@ public final class KoomaHomeActivity extends Activity {
     }
 
     /** An original stylized robot illustration, no product imagery or robot status implied. */
-    private static final class RobotPicture extends View {
+    private final class RobotPicture extends View {
         private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
         RobotPicture(Context context) { super(context); }
         @Override protected void onDraw(Canvas c) {
@@ -439,7 +439,7 @@ public final class KoomaHomeActivity extends Activity {
     }
 
     /** Explicitly fictional preview: no inferred floor plan or robot position. */
-    private static final class MapIllustration extends View {
+    private final class MapIllustration extends View {
         private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
         MapIllustration(Context context) {super(context);}
         @Override protected void onDraw(Canvas c) {
