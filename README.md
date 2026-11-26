@@ -1,6 +1,9 @@
-# KOOMA-I — application Android native pour Venii N1 Max (prototype 2.6)
+# KOOMA-I — application Android native pour Venii N1 Max (prototype 2.8)
 
 ## Journal des versions
+
+- **2.8-test (build 12)** : historique de 40 transitions de codes d'état réels, avec heure et valeur brute d'alimentation ; journal alimenté par les lectures réelles et par une observation volontaire. En mode réel, l'observation relit l'état connu (888) toutes les 12 secondes pendant au maximum 5 minutes. Aucun ordre de déplacement, aucune transmission Internet ni conservation après fermeture de l'application. Les commandes sont indisponibles pendant l'observation ; celle-ci s'arrête lors du passage de l'application en arrière-plan. Une nouvelle lecture explicite est nécessaire avant de commander. Les transitions plus courtes que la période d'échantillonnage peuvent échapper à l'observation.
+
 
 - **2.7-test (build 11)** : affichage d’une estimation du niveau de batterie à partir du code 60 si la valeur brute est un entier de 0 à 100 ; affichage « recharge probable » pour le code d’état 11 et « charge terminée probable » pour 12, selon les observations sur le robot. Les codes bruts restent accessibles, la lecture périme toujours après 60 secondes et les commandes réelles sont inchangées. Les commandes 1020, 1060, 1070 et 1050 ont répondu aux essais du 26/11/2026.
 
