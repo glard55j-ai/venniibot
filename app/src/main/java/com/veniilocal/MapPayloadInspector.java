@@ -31,7 +31,7 @@ public final class MapPayloadInspector {
                 payload.append(line);
             }
         }
-        if (current >= 0) record(payload, current, sizes, jsonLike);
+        if (current >= 0) record(payload, current, sizes, formats);
 
         StringBuilder result = new StringBuilder(
             "Analyse locale uniquement. Aucune carte réelle décodée.\n");
