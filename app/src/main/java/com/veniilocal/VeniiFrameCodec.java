@@ -34,8 +34,13 @@ public final class VeniiFrameCodec {
     }
 
     public static String decodeFrame(InputStream source) throws IOException, GeneralSecurityException {
+        return decodeFrame(source, MAX_PAYLOAD);
+    }
+
+    static String decodeFrame(InputStream source, int maxPayload) throws IOException, GeneralSecurityException {
+        if (maxPayload <= 0 || maxPayload > 1048576) throw new IllegalArgumentException("Limite invalide");
         int size = ByteBuffer.wrap(readFully(source, 4)).order(ByteOrder.BIG_ENDIAN).getInt();
-        if (size <= 0 || size > MAX_PAYLOAD) throw new IOException("Taille de réponse inattendue");
+        if (size <= 0 || size > maxPayload) throw new IOException("Taille de réponse inattendue");
         byte[] b64 = readFully(source, size);
         byte[] ciphertext;
         try { ciphertext = Base64.getDecoder().decode(b64); }

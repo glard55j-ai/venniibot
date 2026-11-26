@@ -36,6 +36,9 @@ public final class MainActivity extends Activity {
     private TextView connection, state, power, suction, volume, issue, note, telemetrySummary, dashboardMode, dashboardState, historyView, diagnostic, demoStatus;
     private View robotPreview, settingsPanel, manualPanel;
     private VeniiClient.Status lastReport;
+    private VeniiClient.LidarReport lidarReport;
+    private TextView lidarStatus;
+    private Button lidarListen, lidarRaw;
     private String lastReportTime = "Jamais", lastAttempt = "Aucune tentative réelle", lastCommand = "Aucune commande réelle", lastBefore = "—", lastAfter = "—";
     private DemoMap demoMap;
     private TextView elapsedLabel;
@@ -413,6 +416,7 @@ public final class MainActivity extends Activity {
         } else r.append("Aucune donnée réelle reçue.\n");
         r.append("Dernier ordre réel : ").append(lastCommand).append("\n");
         r.append("État avant : ").append(lastBefore).append(" • après : ").append(lastAfter).append("\n");
+        r.append("LiDAR • ").append(lidarReport == null ? "Aucun essai réel effectué" : lidarReport.summary()).append("\n");
         r.append("Un ordre transmis ne confirme pas un mouvement. Valeurs non interprétées. Aucun identifiant réseau ni jeton inclus.");
         return r.toString();
     }
@@ -595,9 +599,23 @@ public final class MainActivity extends Activity {
         add(diag, reportButton, 8);
         reportButton.setOnClickListener(v -> showDiagnosticReport());
         add(diag, text("Le rapport sépare les essais réels de la simulation et exclut les jetons et identifiants réseau. Partage manuel uniquement.", 12, MUTED, false), 8);
+        LinearLayout lidar = column(14, CARD);
+        add(main, lidar, 12);
+        add(lidar, text("LIDAR • CARTOGRAPHIE EXPÉRIMENTALE", 12, ACCENT, true), 0);
+        add(lidar, text("Écoute 15 s après authentification et demande d’état connue. Aucun ordre LiDAR ni déplacement. À effectuer près du robot, hors démo.", 12, MUTED, false), 8);
+        lidarStatus = text("Aucune écoute réelle effectuée • carte indisponible", 13, PRIMARY, false);
+        add(lidar, lidarStatus, 10);
+        lidarListen = button("Écouter les données du robot", ACCENT, BG);
+        add(lidar, lidarListen, 8);
+        lidarListen.setOnClickListener(v -> listenLidar());
+        lidarRaw = button("Copier les données candidates brutes", Color.rgb(38,60,80), PRIMARY);
+        add(lidar, lidarRaw, 8);
+        lidarRaw.setOnClickListener(v -> copyLidarRaw());
+        add(lidar, text("Le rapport standard ne contient que les codes et tailles. Les données brutes peuvent révéler le plan de votre maison. Conservées en mémoire, jamais envoyées automatiquement.", 12, MUTED, false), 8);
         LinearLayout changes = column(18, CARD);
         add(main, changes, 16);
         add(changes, text("VERSION " + appVersion(), 12, ACCENT, true), 0);
+        add(changes, text("2.6 • Écoute cartographie/LiDAR en lecture seule, codes et tailles, export brut volontaire.", 13, PRIMARY, false), 8);
         add(changes, text("2.5.2 • Nouveau nom KOOMA-I dans Android et dans l’application.", 13, PRIMARY, false), 8);
         add(changes, text("2.5.1 • Nouvelle icône KOOMA-I.", 13, PRIMARY, false), 8);
         add(changes, text("2.5 • Rapport de diagnostic copiable, états avant/après et résultat de la dernière tentative réelle.", 13, PRIMARY, false), 8);
@@ -624,6 +642,8 @@ public final class MainActivity extends Activity {
 
     private void enableButtons() {
         btnConnect.setEnabled(!working);
+        if (lidarListen != null) lidarListen.setEnabled(!working && !demoMode.isChecked());
+        if (lidarRaw != null) lidarRaw.setEnabled(!working && lidarReport != null && lidarReport.hasPayload());
         demoMode.setEnabled(!working);
         repaired.setEnabled(!working);
         boolean ready = !working && (demoMode.isChecked() || (freshStatus() && repaired.isChecked()));
@@ -667,7 +687,7 @@ public final class MainActivity extends Activity {
                 else if (e instanceof java.net.ConnectException) why = "Le robot ne répond pas au port 9000.";
                 else if (e instanceof java.io.IOException) why = "Connexion/lecture impossible. Vérifiez le Wi-Fi et l’état du robot.";
                 else why = "Réponse inattendue. Aucune donnée sensible affichée.";
-                runOnUiThread(() -> { lastAttempt = why; invalidateStatus("Connexion non confirmée"); connection.setText("Connexion non confirmée"); diagnostic.setText(why); activity(why + " • résultat d’un ordre éventuel non confirmé."); });
+                runOnUiThread(() -> { lastAttempt = why; invalidateStatus("Connexion non confirmée"); connection.setText("Connexion non confirmée"); diagnostic.setText(why); if (lidarReport == null && lidarStatus != null && lidarStatus.getText().toString().startsWith("Écoute en cours")) lidarStatus.setText(why); activity(why + " • résultat d’un ordre éventuel non confirmé."); });
             } finally {
                 runOnUiThread(() -> { working = false; enableButtons(); });
             }
@@ -694,6 +714,37 @@ public final class MainActivity extends Activity {
             + " • valeurs non interprétées");
         diagnostic.setText("État 888 reçu à " + clock() + " • " + report.messageCount + " champ(s) reconnus. Signification des codes à valider.");
         enableButtons();
+    }
+
+    private void listenLidar() {
+        if (working || demoMode.isChecked()) return;
+        lidarReport = null;
+        lidarStatus.setText("Écoute en cours • aucun ordre de mouvement");
+        invalidateStatus("Diagnostic LiDAR • relire l’état ensuite");
+        execute("Diagnostic LiDAR en lecture seule…", () -> {
+            VeniiClient.LidarReport result = VeniiClient.listenForLidar();
+            runOnUiThread(() -> {
+                lidarReport = result;
+                lidarStatus.setText(result.summary());
+                lastAttempt = "Diagnostic LiDAR terminé • consulter le rapport";
+                activity("Diagnostic LiDAR terminé • aucun ordre de mouvement envoyé.");
+            });
+        });
+    }
+
+    private void copyLidarRaw() {
+        if (working || lidarReport == null || !lidarReport.hasPayload()) return;
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("Données cartographiques privées")
+            .setMessage("Ces données non décodées peuvent contenir le plan de votre domicile ou d’autres informations privées. Ne les partagez que si vous le souhaitez.")
+            .setNegativeButton("Annuler", null)
+            .setPositiveButton("Copier", (dialog, which) -> {
+                android.content.ClipboardManager cb = (android.content.ClipboardManager)getSystemService(Context.CLIPBOARD_SERVICE);
+                if (cb != null && lidarReport != null) {
+                    cb.setPrimaryClip(android.content.ClipData.newPlainText("KOOMA-I carte brute", lidarReport.rawPayloads()));
+                    android.widget.Toast.makeText(this,"Données copiées",android.widget.Toast.LENGTH_SHORT).show();
+                }
+            }).show();
     }
 
     private void refresh() {

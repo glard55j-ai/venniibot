@@ -1,6 +1,8 @@
-# KOOMA-I — application Android native pour Venii N1 Max (prototype 2.5.2)
+# KOOMA-I — application Android native pour Venii N1 Max (prototype 2.6)
 
 ## Journal des versions
+
+- **2.6-test (build 10)** : diagnostic LiDAR/cartographie en mode réel, découverte et authentification existantes puis uniquement la demande d’état 888. Écoute jusqu’à 15 s / 120 trames après authentification, limite de trame 1 Mio en diagnostic seulement. Codes candidats 1219, 1220, 800062–800065 : comptage et taille du contenu, aucune interprétation confirmée. Dernier contenu brut par code carte (1219, 1220, 800064) conservé en mémoire, plafonné à 500 000 caractères par code, export manuel avec avertissement de confidentialité. Aucun ordre LiDAR inconnu, aucun mouvement, aucun stockage permanent. La carte réelle et son format restent à confirmer. L’écoute ne valide pas l’état de sécurité : relire l’état avant de commander.
 
 - **2.5.2-test (build 9)** : changement du nom affiché en KOOMA-I sur Android, dans l’interface et dans le rapport de diagnostic. L’icône de la 2.5.1, l’identifiant d’application, le protocole et les réglages locaux restent inchangés.
 
