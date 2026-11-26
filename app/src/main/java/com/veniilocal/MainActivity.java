@@ -33,7 +33,7 @@ public final class MainActivity extends Activity {
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private Button btnConnect, btnStart, btnPause, btnResume, btnDock;
     private CheckBox repaired, demoMode;
-    private TextView connection, state, power, suction, volume, issue, note, telemetrySummary, dashboardMode, dashboardState, historyView, diagnostic, demoStatus;
+    private TextView connection, state, power, suction, volume, issue, note, telemetrySummary, dashboardMode, dashboardState, dashboardBattery, dashboardBatteryHint, historyView, diagnostic, demoStatus;
     private View robotPreview, settingsPanel, manualPanel;
     private VeniiClient.Status lastReport;
     private VeniiClient.LidarReport lidarReport;
@@ -465,8 +465,10 @@ public final class MainActivity extends Activity {
         tiles.addView(batteryTile, left);
         tiles.addView(statusTile, new LinearLayout.LayoutParams(0, -2, 1f));
         add(batteryTile, text("BATTERIE", 11, MUTED, true), 0);
-        add(batteryTile, text("— %", 24, PRIMARY, true), 5);
-        add(batteryTile, text("Niveau non identifié", 12, MUTED, false), 3);
+        dashboardBattery = text("—", 24, PRIMARY, true);
+        add(batteryTile, dashboardBattery, 5);
+        dashboardBatteryHint = text("En attente de lecture", 12, MUTED, false);
+        add(batteryTile, dashboardBatteryHint, 3);
         add(statusTile, text("ÉTAT DU ROBOT", 11, MUTED, true), 0);
         dashboardState = text("En attente", 16, PRIMARY, true);
         add(statusTile, dashboardState, 5);
@@ -506,7 +508,7 @@ public final class MainActivity extends Activity {
         suction = valueRow(readings, "Puissance nettoyage (1300)");
         volume = valueRow(readings, "Volume (1502)");
         issue = valueRow(readings, "Code d’erreur (70, si présent)");
-        add(readings, text("« — » signifie : donnée absente ou non décodée. Le pourcentage de batterie et la signification des codes d’erreur restent à identifier ; ne pas les deviner.", 12, MUTED, false), 14);
+        add(readings, text("« — » signifie : donnée absente ou non décodée. Le code 60 semble refléter la batterie : estimation à confirmer. Les états 11 et 12 sont provisoires, les autres restent bruts.", 12, MUTED, false), 14);
 
         LinearLayout safety = column(14, CARD);
         add(main, safety, 16);
@@ -567,7 +569,7 @@ public final class MainActivity extends Activity {
         btnDock = button("Retour à la base  ·  1050", Color.rgb(38, 60, 80), PRIMARY);
         add(controls, btnDock, 9);
         btnDock.setOnClickListener(v -> { if (demoMode.isChecked()) simulate(1050, "Retour à la base"); else sendUnverified(1050, "Retour à la base"); });
-        add(controls, text("Les codes 1050, 1060 et 1070 restent à valider sur votre robot. Le mode réel demande un état récent et votre vérification physique. Un appui envoie directement un seul ordre : restez près du bouton physique du robot.", 12, MUTED, false), 12);
+        add(controls, text("Les codes 1020, 1060, 1070 et 1050 ont répondu lors des essais physiques du 26/11/2026. Un appui envoie toujours un seul ordre ; restez près du robot et de son bouton physique.", 12, MUTED, false), 12);
 
         LinearLayout manual = buildManualPanel();
         manualPanel = manual;
@@ -617,6 +619,7 @@ public final class MainActivity extends Activity {
         LinearLayout changes = column(18, CARD);
         add(main, changes, 16);
         add(changes, text("VERSION " + appVersion(), 12, ACCENT, true), 0);
+        add(changes, text("2.7 • Indicateur de batterie estimé (60), états 11/12 provisoires, valeurs brutes conservées.", 13, PRIMARY, false), 8);
         add(changes, text("2.6 • Écoute cartographie/LiDAR en lecture seule, codes et tailles, export brut volontaire.", 13, PRIMARY, false), 8);
         add(changes, text("2.5.2 • Nouveau nom KOOMA-I dans Android et dans l’application.", 13, PRIMARY, false), 8);
         add(changes, text("2.5.1 • Nouvelle icône KOOMA-I.", 13, PRIMARY, false), 8);
@@ -634,6 +637,8 @@ public final class MainActivity extends Activity {
         hasStatus = false;
         handler.removeCallbacks(expireStatus);
         if (dashboardState != null) dashboardState.setText(message);
+        if (dashboardBattery != null) dashboardBattery.setText("—");
+        if (dashboardBatteryHint != null) dashboardBatteryHint.setText("Lecture non actualisée");
         if (telemetrySummary != null) telemetrySummary.setText("Données non actualisées • relire l’état");
         if (diagnostic != null) diagnostic.setText(message + " • données à actualiser.");
     }
@@ -704,7 +709,20 @@ public final class MainActivity extends Activity {
         lastStatusAt = android.os.SystemClock.elapsedRealtime();
         handler.removeCallbacks(expireStatus);
         handler.postDelayed(expireStatus, STATUS_TTL_MS);
-        dashboardState.setText("Code " + report.generalState);
+        String chargeState;
+        if ("11".equals(report.generalState)) chargeState = "Recharge probable";
+        else if ("12".equals(report.generalState)) chargeState = "Charge terminée probable";
+        else chargeState = "Code " + report.generalState;
+        dashboardState.setText(chargeState);
+        dashboardBattery.setText("—");
+        dashboardBatteryHint.setText("Code 60 non interprétable");
+        try {
+            int level = Integer.parseInt(report.powerReport.trim());
+            if (level >= 0 && level <= 100) {
+                dashboardBattery.setText(level + " %");
+                dashboardBatteryHint.setText("Estimation (code 60)");
+            }
+        } catch (NumberFormatException ignored) { /* Garder la valeur brute sans inventer de pourcentage. */ }
         connection.setText("Robot détecté • état reçu");
         state.setText(report.generalState);
         power.setText(report.powerReport);
