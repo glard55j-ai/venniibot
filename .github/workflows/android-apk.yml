@@ -33,7 +33,9 @@ jobs:
             tools/MapGridStatisticsSelfTest.java \
             app/src/main/java/com/veniilocal/MapExportBlocks.java \
             tools/MapExportBlocksSelfTest.java \
-            tools/MapSyntheticExportSelfTest.java
+            tools/MapSyntheticExportSelfTest.java \
+            app/src/main/java/com/veniilocal/MapCandidateMemory.java \
+            tools/MapCandidateMemorySelfTest.java
           java -cp /tmp/kooma-map-test MapPayloadInspectorSelfTest
           java -cp /tmp/kooma-map-test MapGridDecoderSelfTest
           java -cp /tmp/kooma-map-test MapGridRasterizerSelfTest
@@ -41,6 +43,7 @@ jobs:
           java -cp /tmp/kooma-map-test MapGridStatisticsSelfTest
           java -cp /tmp/kooma-map-test MapExportBlocksSelfTest
           java -cp /tmp/kooma-map-test MapSyntheticExportSelfTest
+          java -cp /tmp/kooma-map-test MapCandidateMemorySelfTest
       - name: Compiler APK debug
         run: gradle --no-daemon :app:assembleDebug
       - uses: actions/upload-artifact@v4
