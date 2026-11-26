@@ -621,6 +621,10 @@ public final class MapActivity extends Activity {
         return (int)(getResources().getDisplayMetrics().density * value + .5f);
     }
 
+    private int dp(float value) {
+        return (int)(getResources().getDisplayMetrics().density * value + .5f);
+    }
+
     private final class MapPreviewView extends View {
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private Bitmap previewBitmap;
