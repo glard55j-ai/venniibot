@@ -36,7 +36,7 @@ public final class MapActivity extends Activity {
     private static final int MAX_IMPORT_BYTES = 6 * 1024 * 1024;
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private volatile boolean destroyed;
-    private TextView importResult, heading, metadata;
+    private TextView importResult, heading, metadata, statistics;
     private Button importTxtButton, importMapButton;
     private MapPreviewView mapView;
 
@@ -74,6 +74,7 @@ public final class MapActivity extends Activity {
         reset.setOnClickListener(v -> showDemo());
 
         importResult = title(root, "Aucun fichier analysé. Lecture locale uniquement, sans téléchargement ni transfert.", 13, TEXT);
+        statistics = title(root, "Statistiques : en attente d’une grille décodée.", 13, MUTED);
         title(root, "Format JSON expérimental attendu : champs width, height et map (Base64 d'un bloc LZ4). Champs facultatifs : resolution, x_min, y_min. Aucun fichier n'est enregistré dans l'application.", 12, MUTED);
         title(root, "Confidentialité : une vraie carte peut révéler le plan du domicile. N'exporte ou ne partage ces fichiers que volontairement.", 12, WARNING);
 
@@ -139,6 +140,7 @@ public final class MapActivity extends Activity {
                         throw new IllegalArgumentException("Champ map (Base64) manquant");
                     byte[] cells = MapGridDecoder.decodeBase64Lz4((String)mapValue, width, height);
                     MapGridRasterizer.Preview preview = MapGridRasterizer.rasterize(cells, width, height, 600);
+                    String analysis = MapGridStatistics.summarize(cells, 8);
                     String info = width + " × " + height + " cellules ; aperçu "
                             + preview.width + " × " + preview.height + "."
                             + optionalNumber(obj, "resolution")
@@ -147,6 +149,7 @@ public final class MapActivity extends Activity {
                     runOnUiThread(() -> {
                         if (destroyed) return;
                         mapView.setPreview(preview);
+                        statistics.setText(analysis);
                         heading.setText("OCTETS IMPORTÉS — pas une carte interprétée");
                         metadata.setText(info);
                         importResult.setText("Décodage Base64/LZ4 terminé localement. Valeurs des cellules affichées en gris brut (0 = noir, 255 = blanc). Le sens de ces valeurs et l'orientation sont inconnus.");
@@ -208,6 +211,7 @@ public final class MapActivity extends Activity {
         heading.setText("DÉMONSTRATION — carte fictive");
         metadata.setText("Aucune carte réelle décodée. L'orientation et la signification des octets restent inconnues.");
         importResult.setText("Démonstration seulement : aucun fichier lu ni ordre envoyé au robot.");
+        statistics.setText("Statistiques : en attente d’une grille décodée.");
     }
 
     private void showSyntheticExample() {
@@ -229,6 +233,7 @@ public final class MapActivity extends Activity {
         mapView.setPreview(preview);
         heading.setText("EXEMPLE SYNTHÉTIQUE — aucun robot");
         metadata.setText("16 × 12 octets artificiels ; aperçu des nuances de gris, sans murs ni pièces.");
+        statistics.setText(MapGridStatistics.summarize(decoded, 8));
         importResult.setText("Test du décodage Base64/LZ4 exécuté sur des données inventées. Ce n'est PAS la carte de ton domicile.");
     }
 
