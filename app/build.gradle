@@ -8,8 +8,8 @@ android {
         applicationId 'com.veniilocal.app'
         minSdk 26
         targetSdk 36
-        versionCode 20
-        versionName '4.3-map-txt-import'
+        versionCode 21
+        versionName '4.4-map-explorer-test'
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
