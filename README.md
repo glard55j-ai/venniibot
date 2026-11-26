@@ -2,6 +2,9 @@
 
 ## Journal des versions
 
+- **2.7-test (build 11)** : affichage d’une estimation du niveau de batterie à partir du code 60 si la valeur brute est un entier de 0 à 100 ; affichage « recharge probable » pour le code d’état 11 et « charge terminée probable » pour 12, selon les observations sur le robot. Les codes bruts restent accessibles, la lecture périme toujours après 60 secondes et les commandes réelles sont inchangées. Les commandes 1020, 1060, 1070 et 1050 ont répondu aux essais du 26/11/2026.
+
+
 - **2.6-test (build 10)** : diagnostic LiDAR/cartographie en mode réel, découverte et authentification existantes puis uniquement la demande d’état 888. Écoute jusqu’à 15 s / 120 trames après authentification, limite de trame 1 Mio en diagnostic seulement. Codes candidats 1219, 1220, 800062–800065 : comptage et taille du contenu, aucune interprétation confirmée. Dernier contenu brut par code carte (1219, 1220, 800064) conservé en mémoire, plafonné à 500 000 caractères par code, export manuel vers un fichier choisi par l’utilisateur, avec avertissement de confidentialité. Aucun ordre LiDAR inconnu, aucun mouvement, aucun stockage permanent automatique. La carte réelle et son format restent à confirmer. L’écoute ne valide pas l’état de sécurité : relire l’état avant de commander.
 
 - **2.5.2-test (build 9)** : changement du nom affiché en KOOMA-I sur Android, dans l’interface et dans le rapport de diagnostic. L’icône de la 2.5.1, l’identifiant d’application, le protocole et les réglages locaux restent inchangés.
@@ -20,7 +23,7 @@
 - **2.0-test (build 2)** : démonstration locale, quatre commandes directes, lecture des valeurs brutes horodatée. La suppression des fenêtres de confirmation a été demandée par l'utilisateur ; les commandes réelles nécessitent toujours une lecture d'état et un contrôle physique.
 - **1.0** : première version du prototype, conservée sur `main`.
 
-Les commandes 1050, 1060 et 1070 restent non validées physiquement. Le code 60 n'est pas un pourcentage de batterie confirmé. Les valeurs manquantes ne sont pas inventées. Pour tester, connectez le téléphone au réseau VENII, désactivez le mode démo uniquement à proximité du robot, relisez l'état et validez le contrôle physique. Les commandes sont directes : gardez le bouton physique accessible, loin des escaliers.
+Les commandes 1050, 1060 et 1070 ont été validées lors d’essais physiques avec le robot ; le code 60 semble être une indication de batterie, sans confirmation documentaire. Les valeurs manquantes ne sont pas inventées. Pour tester, connectez le téléphone au réseau VENII, désactivez le mode démo uniquement à proximité du robot, relisez l'état et validez le contrôle physique. Les commandes sont directes : gardez le bouton physique accessible, loin des escaliers.
 
 
 ## Compiler l'APK sans Android Studio
@@ -49,7 +52,7 @@ Alternative : avec JDK 17, Android SDK 36 et Gradle 8.13 déjà installés, exé
 
 - Les tests locaux exécutent `tools/CodecSelfTest.java` sur une JVM pour valider l'encodage et le décodage des trames.
 - Des compilations APK V2 ont réussi dans GitHub Actions et le mode démo a été testé sur le téléphone. Les nouvelles commandes et l'interprétation de la télémétrie restent à valider sur le robot.
-- Le code `1020` est validé physiquement dans le parcours précédent ; `888` est validé en réponse JSON. `1060`, `1070` et `1050` ne le sont pas.
+- Le code `1020` est validé physiquement dans le parcours précédent ; `888` est validé en réponse JSON. `1060`, `1070` et `1050` ont ensuite été validés par observation physique le 26/11/2026.
 
 ### Vérification hors Android
 
