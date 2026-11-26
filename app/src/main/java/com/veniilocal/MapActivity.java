@@ -124,38 +124,58 @@ public final class MapActivity extends Activity {
         io.execute(() -> {
             try {
                 String raw = readBounded(uri);
+                DecodedMap decoded = null;
+                String message;
                 if (request == REQUEST_TXT) {
                     String report = MapPayloadInspector.inspect(raw);
-                    runOnUiThread(() -> {
-                        if (destroyed) return;
-                        importResult.setText(report);
-                        unlock();
-                    });
+                    java.util.List<MapExportBlocks.Block> blocks = MapExportBlocks.extract(raw);
+                    int invalidCandidates = 0;
+                    int decodedId = -1;
+                    for (MapExportBlocks.Block block : blocks) {
+                        try {
+                            DecodedMap match = decodeDocument(block.payload);
+                            if (match != null) {
+                                decoded = match;
+                                decodedId = block.id;
+                                break;
+                            }
+                        } catch (Exception malformed) {
+                            // A candidate may contain unknown/non-map data; do not claim it is a map.
+                            invalidCandidates++;
+                        }
+                    }
+                    if (decoded != null) {
+                        message = report + "\n\nGrille Base64/LZ4 complète repérée dans le bloc "
+                                + decodedId + " et décodée localement. Valeurs brutes seulement.";
+                    } else {
+                        message = report + "\n\nAucune grille complète et décodable avec width, height et map "
+                                + "dans cet export. " + blocks.size() + " bloc(s) analysé(s)"
+                                + (invalidCandidates > 0
+                                ? ", dont " + invalidCandidates + " non compatible(s)." : ".")
+                                + "\nCela ne prouve pas que le robot n'a pas de carte.";
+                    }
                 } else {
-                    JSONObject obj = new JSONObject(raw);
-                    int width = integerField(obj, "width");
-                    int height = integerField(obj, "height");
-                    Object mapValue = obj.opt("map");
-                    if (!(mapValue instanceof String) || ((String)mapValue).isEmpty())
-                        throw new IllegalArgumentException("Champ map (Base64) manquant");
-                    byte[] cells = MapGridDecoder.decodeBase64Lz4((String)mapValue, width, height);
-                    MapGridRasterizer.Preview preview = MapGridRasterizer.rasterize(cells, width, height, 600);
-                    String analysis = MapGridStatistics.summarize(cells, 8);
-                    String info = width + " × " + height + " cellules ; aperçu "
-                            + preview.width + " × " + preview.height + "."
-                            + optionalNumber(obj, "resolution")
-                            + optionalNumber(obj, "x_min")
-                            + optionalNumber(obj, "y_min");
-                    runOnUiThread(() -> {
-                        if (destroyed) return;
-                        mapView.setPreview(preview);
-                        statistics.setText(analysis);
-                        heading.setText("OCTETS IMPORTÉS — pas une carte interprétée");
-                        metadata.setText(info);
-                        importResult.setText("Décodage Base64/LZ4 terminé localement. Valeurs des cellules affichées en gris brut (0 = noir, 255 = blanc). Le sens de ces valeurs et l'orientation sont inconnus.");
-                        unlock();
-                    });
+                    decoded = decodeDocument(raw);
+                    if (decoded == null)
+                        throw new IllegalArgumentException("Aucun objet de carte complet (width, height, map) trouvé dans ce JSON");
+                    message = "Décodage Base64/LZ4 terminé sur un fichier choisi localement.";
                 }
+                final DecodedMap finalDecoded = decoded;
+                final String resultMessage = message;
+                runOnUiThread(() -> {
+                    if (destroyed) return;
+                    if (finalDecoded != null) {
+                        mapView.setPreview(finalDecoded.preview);
+                        statistics.setText(finalDecoded.analysis);
+                        heading.setText("GRILLE DÉCODÉE — pas une carte interprétée");
+                        metadata.setText(finalDecoded.info);
+                        importResult.setText(resultMessage + "\n0 = noir, 255 = blanc. "
+                                + "Le sens des valeurs et l'orientation sont inconnus.");
+                    } else {
+                        importResult.setText(resultMessage);
+                    }
+                    unlock();
+                });
             } catch (Exception error) {
                 String message = error instanceof IllegalArgumentException
                     ? error.getMessage() : "Fichier non compatible ou illisible";
@@ -167,6 +187,37 @@ public final class MapActivity extends Activity {
                 });
             }
         });
+    }
+
+
+    private static final class DecodedMap {
+        final MapGridRasterizer.Preview preview;
+        final String analysis, info;
+        DecodedMap(MapGridRasterizer.Preview preview, String analysis, String info) {
+            this.preview = preview;
+            this.analysis = analysis;
+            this.info = info;
+        }
+    }
+
+    /** Decodes only complete MapEntity-like documents; has no networking or robot commands. */
+    private static DecodedMap decodeDocument(String raw) throws Exception {
+        JSONObject obj = MapDocumentParser.find(raw);
+        if (obj == null) return null;
+        int width = integerField(obj, "width");
+        int height = integerField(obj, "height");
+        Object payload = obj.opt("map");
+        if (!(payload instanceof String) || ((String)payload).isEmpty())
+            throw new IllegalArgumentException("Champ map (Base64) manquant");
+        byte[] cells = MapGridDecoder.decodeBase64Lz4((String)payload, width, height);
+        MapGridRasterizer.Preview preview = MapGridRasterizer.rasterize(cells, width, height, 600);
+        String analysis = MapGridStatistics.summarize(cells, 8);
+        String info = width + " × " + height + " cellules ; aperçu "
+                + preview.width + " × " + preview.height + "."
+                + optionalNumber(obj, "resolution")
+                + optionalNumber(obj, "x_min")
+                + optionalNumber(obj, "y_min");
+        return new DecodedMap(preview, analysis, info);
     }
 
     private String readBounded(Uri uri) throws Exception {
