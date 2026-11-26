@@ -1,6 +1,8 @@
-# Venii Local — application Android native (prototype 2.5.1)
+# KOOMA-I — application Android native pour Venii N1 Max (prototype 2.5.2)
 
 ## Journal des versions
+
+- **2.5.2-test (build 9)** : changement du nom affiché en KOOMA-I sur Android, dans l’interface et dans le rapport de diagnostic. L’icône de la 2.5.1, l’identifiant d’application, le protocole et les réglages locaux restent inchangés.
 
 - **2.5.1-test (build 8)** : nouvelle icône KOOMA-I fournie par l’utilisateur, redimensionnée à 192 × 192 pixels. Le nom système Venii Local, l’identifiant d’application et le protocole sont inchangés.
 

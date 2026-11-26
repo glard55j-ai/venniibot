@@ -396,7 +396,7 @@ public final class MainActivity extends Activity {
 
     private String diagnosticReport() {
         StringBuilder r = new StringBuilder();
-        r.append("VENII LOCAL • v").append(appVersion()).append("\n");
+        r.append("KOOMA-I • v").append(appVersion()).append("\n");
         r.append("Rapport local • ").append(new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss Z", java.util.Locale.FRANCE).format(new java.util.Date())).append("\n");
         r.append("Android : ").append(android.os.Build.VERSION.SDK_INT).append("\n");
         r.append("Mode : ").append(demoMode.isChecked() ? "DÉMONSTRATION" : "RÉEL").append("\n");
@@ -426,7 +426,7 @@ public final class MainActivity extends Activity {
             .setPositiveButton("Copier", (dialog, which) -> {
                 android.content.ClipboardManager clipboard = (android.content.ClipboardManager)getSystemService(Context.CLIPBOARD_SERVICE);
                 if (clipboard != null) {
-                    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Venii diagnostic", report));
+                    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("KOOMA-I diagnostic", report));
                     android.widget.Toast.makeText(this,"Rapport copié",android.widget.Toast.LENGTH_SHORT).show();
                 }
             }).show();
@@ -441,7 +441,7 @@ public final class MainActivity extends Activity {
         scroll.addView(main);
         setContentView(scroll);
 
-        add(main, text("VENII LOCAL  •  v" + appVersion(), 14, ACCENT, true), 0);
+        add(main, text("KOOMA-I  •  v" + appVersion(), 14, ACCENT, true), 0);
         add(main, text("N1 Max", 34, PRIMARY, true), 5);
         add(main, text("Pilotage privé en Wi-Fi, sans compte ni cloud", 14, MUTED, false), 4);
 
@@ -598,6 +598,7 @@ public final class MainActivity extends Activity {
         LinearLayout changes = column(18, CARD);
         add(main, changes, 16);
         add(changes, text("VERSION " + appVersion(), 12, ACCENT, true), 0);
+        add(changes, text("2.5.2 • Nouveau nom KOOMA-I dans Android et dans l’application.", 13, PRIMARY, false), 8);
         add(changes, text("2.5.1 • Nouvelle icône KOOMA-I.", 13, PRIMARY, false), 8);
         add(changes, text("2.5 • Rapport de diagnostic copiable, états avant/après et résultat de la dernière tentative réelle.", 13, PRIMARY, false), 8);
         add(changes, text("2.4 • Carte et télécommande fictives, chronomètre, préférences démo locales.", 13, PRIMARY, false), 8);
