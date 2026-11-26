@@ -577,6 +577,9 @@ public final class MainActivity extends Activity {
         add(main, text("KOOMA-I  •  v" + appVersion(), 14, ACCENT, true), 0);
         add(main, text("N1 Max", 34, PRIMARY, true), 5);
         add(main, text("Lecture locale, sans Internet", 14, MUTED, false), 4);
+        Button mapButton = button("Cartographie expérimentale (démo)", CARD, PRIMARY);
+        mapButton.setOnClickListener(v -> startActivity(new Intent(this, MapActivity.class)));
+        add(main, mapButton, 12);
 
         LinearLayout dashboard = column(18, CARD);
         add(main, dashboard, 20);
