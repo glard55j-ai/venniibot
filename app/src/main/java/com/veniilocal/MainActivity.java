@@ -447,12 +447,20 @@ public final class MainActivity extends Activity {
             }).show();
     }
 
+    private String stateLabel(String code) {
+        if ("2".equals(code)) return "Nettoyage en cours";
+        if ("3".equals(code)) return "En pause";
+        if ("4".equals(code)) return "Retour à la base";
+        if ("11".equals(code)) return "Recharge en cours";
+        if ("12".equals(code)) return "Charge terminée";
+        return "Code " + (code == null ? "inconnu" : code);
+    }
+
     private void recordStateTransition(VeniiClient.Status report) {
         String code = report.generalState;
         if (code == null || code.trim().isEmpty()) return;
         if (!code.equals(lastObservedState)) {
-            String label = "11".equals(code) ? "recharge probable"
-                : "12".equals(code) ? "charge terminée probable" : "code non interprété";
+            String label = stateLabel(code) + ("2".equals(code) || "3".equals(code) || "4".equals(code) || "11".equals(code) || "12".equals(code) ? " • interprétation issue des essais" : " • inconnu");
             String entry = clock() + " • État " + code + " (" + label + ")"
                 + " • alimentation brute " + report.powerReport;
             stateTransitions.addFirst(entry);
@@ -724,6 +732,7 @@ public final class MainActivity extends Activity {
         LinearLayout changes = column(18, CARD);
         add(main, changes, 16);
         add(changes, text("VERSION " + appVersion(), 12, ACCENT, true), 0);
+        add(changes, text("2.9 • Affichage lisible des états 2, 3, 4, 11 et 12 sur la base des essais réels. Codes bruts conservés.", 13, PRIMARY, false), 8);
         add(changes, text("2.8 • Historique horodaté des transitions et observation volontaire en lecture seule pendant 5 minutes.", 13, PRIMARY, false), 8);
         add(changes, text("2.7 • Indicateur de batterie estimé (60), états 11/12 provisoires, valeurs brutes conservées.", 13, PRIMARY, false), 8);
         add(changes, text("2.6 • Écoute cartographie/LiDAR en lecture seule, codes et tailles, export brut volontaire.", 13, PRIMARY, false), 8);
@@ -816,11 +825,7 @@ public final class MainActivity extends Activity {
         lastStatusAt = android.os.SystemClock.elapsedRealtime();
         handler.removeCallbacks(expireStatus);
         handler.postDelayed(expireStatus, STATUS_TTL_MS);
-        String chargeState;
-        if ("11".equals(report.generalState)) chargeState = "Recharge probable";
-        else if ("12".equals(report.generalState)) chargeState = "Charge terminée probable";
-        else chargeState = "Code " + report.generalState;
-        dashboardState.setText(chargeState);
+        dashboardState.setText(stateLabel(report.generalState));
         dashboardBattery.setText("—");
         dashboardBatteryHint.setText("Code 60 non interprétable");
         try {
