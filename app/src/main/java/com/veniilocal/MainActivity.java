@@ -52,6 +52,8 @@ public final class MainActivity extends Activity {
     private Button lidarListen, lidarRaw;
     private String pendingLidarExport;
     private static final int LIDAR_EXPORT_REQUEST = 260;
+    private static final int STATE_EXPORT_REQUEST = 261;
+    private String pendingStateExport;
     private String lastReportTime = "Jamais", lastAttempt = "Aucune tentative réelle", lastCommand = "Aucune commande réelle", lastBefore = "—", lastAfter = "—";
     private DemoMap demoMap;
     private TextView elapsedLabel;
@@ -473,6 +475,29 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private void exportStateHistory() {
+        if (stateTransitions.isEmpty()) {
+            android.widget.Toast.makeText(this, "Aucun changement d’état à exporter", android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
+        StringBuilder body = new StringBuilder("KOOMA-I • Journal des états réels\\n");
+        body.append("Codes 2/3/4/11/12 : interprétations issues des essais physiques, non documentées officiellement.\\n");
+        body.append("Valeur alimentation brute 60 : pourcentage estimé, non garanti.\\n");
+        body.append("Échantillonnage : les transitions rapides peuvent être manquées.\\n\\n");
+        java.util.Iterator<String> it = stateTransitions.descendingIterator();
+        while (it.hasNext()) body.append(it.next()).append("\\n");
+        pendingStateExport = body.toString();
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("text/plain");
+        intent.putExtra(Intent.EXTRA_TITLE, "KOOMA-I-etats.txt");
+        try { startActivityForResult(intent, STATE_EXPORT_REQUEST); }
+        catch (android.content.ActivityNotFoundException failure) {
+            pendingStateExport = null;
+            android.widget.Toast.makeText(this,"Sélecteur de fichiers indisponible",android.widget.Toast.LENGTH_LONG).show();
+        }
+    }
+
     private void stopMonitor(String reason) {
         monitorActive = false;
         handler.removeCallbacks(monitorTick);
@@ -534,8 +559,9 @@ public final class MainActivity extends Activity {
         LinearLayout dashboard = column(18, CARD);
         add(main, dashboard, 20);
         add(dashboard, text("TABLEAU DE BORD", 12, ACCENT, true), 0);
-        dashboardMode = text("DÉMONSTRATION • aucune commande réelle", 13, ACCENT, true);
+        dashboardMode = text("MODE COMMANDES : DÉMONSTRATION • aucun ordre réel", 13, ACCENT, true);
         add(dashboard, dashboardMode, 9);
+        add(dashboard, text("DONNÉES DU ROBOT : dernière lecture réelle, distincte de la simulation. Lecture récente seulement après actualisation.", 12, MUTED, false), 8);
         LinearLayout tiles = new LinearLayout(this);
         tiles.setOrientation(LinearLayout.HORIZONTAL);
         LinearLayout batteryTile = column(12, Color.rgb(38, 60, 80));
@@ -635,9 +661,9 @@ public final class MainActivity extends Activity {
             if (settingsPanel != null) settingsPanel.setVisibility(checked ? View.VISIBLE : View.GONE);
             invalidateStatus("Lecture nécessaire");
             repaired.setChecked(false);
-            dashboardMode.setText(checked ? "DÉMONSTRATION • aucune commande réelle" : "MODE RÉEL • commandes directes");
+            dashboardMode.setText(checked ? "MODE COMMANDES : DÉMONSTRATION • aucun ordre réel" : "MODE COMMANDES : RÉEL • commandes directes");
             dashboardMode.setTextColor(checked ? ACCENT : WARNING);
-            connection.setText(checked ? "Mode démo • sans connexion" : "Mode réel • lecture d’état obligatoire");
+            connection.setText(checked ? "Simulation activée • état réel non actualisé" : "Mode réel • nouvelle lecture nécessaire");
             activity(checked ? "Démo : appuyez sur les boutons pour simuler." : "Réel : connectez-vous au Wi-Fi VENII et relisez l’état avant de commander.");
             enableButtons();
         });
@@ -706,6 +732,9 @@ public final class MainActivity extends Activity {
         });
         stateHistoryView = text("Aucun changement d’état enregistré.", 12, PRIMARY, false);
         add(observation, stateHistoryView, 12);
+        Button exportStates = button("Exporter l’historique (TXT)", Color.rgb(38,60,80), PRIMARY);
+        add(observation, exportStates, 10);
+        exportStates.setOnClickListener(v -> exportStateHistory());
         Button clearStates = button("Effacer les états enregistrés", Color.rgb(38,60,80), PRIMARY);
         add(observation, clearStates, 10);
         clearStates.setOnClickListener(v -> {
@@ -743,6 +772,7 @@ public final class MainActivity extends Activity {
         LinearLayout changes = column(18, CARD);
         add(main, changes, 16);
         add(changes, text("VERSION " + appVersion(), 12, ACCENT, true), 0);
+        add(changes, text("3.1 • Séparation claire du mode démo et des lectures réelles, indicateur de lecture expirée, export manuel TXT des transitions.", 13, PRIMARY, false), 8);
         add(changes, text("3.0 • Jauge de batterie estimée, heure de dernière lecture et statut de fraîcheur de connexion.", 13, PRIMARY, false), 8);
         add(changes, text("2.9 • Affichage lisible des états 2, 3, 4, 11 et 12 sur la base des essais réels. Codes bruts conservés.", 13, PRIMARY, false), 8);
         add(changes, text("2.8 • Historique horodaté des transitions et observation volontaire en lecture seule pendant 5 minutes.", 13, PRIMARY, false), 8);
@@ -770,7 +800,10 @@ public final class MainActivity extends Activity {
         if (dashboardReadTime != null)
             dashboardReadTime.setText("Dernière lecture : " +
                 ("Jamais".equals(lastReportTime) ? "aucune" : lastReportTime + " • expirée"));
-        if (connectionDetail != null) connectionDetail.setText("Statut : lecture non actualisée • relire l’état");
+        if (connectionDetail != null) connectionDetail.setText(
+            demoMode != null && demoMode.isChecked()
+                ? "Mode démo • aucune lecture réelle récente • commandes simulées"
+                : "Mode réel • lecture non actualisée • relire l’état");
         if (telemetrySummary != null) telemetrySummary.setText("Données non actualisées • relire l’état");
         if (diagnostic != null) diagnostic.setText(message + " • données à actualiser.");
     }
@@ -847,7 +880,9 @@ public final class MainActivity extends Activity {
         batteryProgress.setProgress(0);
         dashboardBatteryHint.setText("Code 60 non interprétable");
         dashboardReadTime.setText("Lu à " + clock() + " • valide 60 s");
-        connectionDetail.setText("Statut : réponse reçue du robot • lecture récente");
+        connectionDetail.setText(demoMode.isChecked()
+            ? "Mode démo • dernière réponse réelle reçue, commandes simulées"
+            : "Mode réel • réponse reçue du robot • lecture récente");
         try {
             int level = Integer.parseInt(report.powerReport.trim());
             if (level >= 0 && level <= 100) {
@@ -908,6 +943,19 @@ public final class MainActivity extends Activity {
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == STATE_EXPORT_REQUEST) {
+            String payload = pendingStateExport;
+            pendingStateExport = null;
+            if (resultCode != RESULT_OK || data == null || data.getData() == null || payload == null) return;
+            try (java.io.OutputStream out = getContentResolver().openOutputStream(data.getData(), "wt")) {
+                if (out == null) throw new java.io.IOException();
+                out.write(payload.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                android.widget.Toast.makeText(this, "Historique exporté", android.widget.Toast.LENGTH_SHORT).show();
+            } catch (Exception failure) {
+                android.widget.Toast.makeText(this, "Export impossible", android.widget.Toast.LENGTH_LONG).show();
+            }
+            return;
+        }
         if (requestCode != LIDAR_EXPORT_REQUEST) return;
         String payload = pendingLidarExport;
         pendingLidarExport = null;
