@@ -18,6 +18,9 @@ import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
+import android.widget.EditText;
+import android.widget.Spinner;
+import android.widget.ArrayAdapter;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -38,6 +41,7 @@ public final class KoomaHomeActivity extends Activity {
     private static final int BACKGROUND = Color.rgb(249, 251, 250);
     private static final int LINE = Color.rgb(231, 239, 236);
     private final ExecutorService work = Executors.newSingleThreadExecutor();
+    private KoomaDraftStore drafts;
 
     private LinearLayout contents, navbar;
     private TextView[] navSymbols = new TextView[5];
@@ -64,6 +68,7 @@ public final class KoomaHomeActivity extends Activity {
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        drafts = new KoomaDraftStore(this);
         getWindow().setStatusBarColor(Color.WHITE);
         getWindow().setNavigationBarColor(Color.BLACK);
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
@@ -244,6 +249,7 @@ public final class KoomaHomeActivity extends Activity {
         add(actions, commands, 9);
         commands.setOnClickListener(v -> openExistingControls());
         add(contents, actions, 20);
+        showDraftCards(KoomaDraftStore.FAVORITES);
 
         add(contents, text("Les commandes réelles de démarrage, pause, reprise et retour à la base restent dans l'écran de contrôle existant, avec leurs protections de sécurité.", 12, SUBTLE, false), 13);
     }
@@ -324,6 +330,7 @@ public final class KoomaHomeActivity extends Activity {
         add(mapCard, open, 13);
         open.setOnClickListener(v -> openExistingMap());
         add(contents, mapCard, 18);
+        showDraftCards(KoomaDraftStore.ZONES);
         LinearLayout diag = card();
         add(diag, text("Diagnostic du LiDAR", 17, INK, true), 0);
         add(diag, text("Écoute en lecture seule de 15 ou 45 secondes. Les vraies cartes et les murs du robot ne sont pas encore validés.", 13, SUBTLE, false), 8);
@@ -339,6 +346,8 @@ public final class KoomaHomeActivity extends Activity {
         add(warning, text("Brouillons uniquement", 16, DARK_GREEN, true), 0);
         add(warning, text("Le protocole de programmation du N1 Max n'est pas validé. Les horaires créés ici restent sur le téléphone et ne sont jamais envoyés au robot.", 13, SUBTLE, false), 7);
         add(contents, warning, 16);
+        add(contents, text("Favoris locaux : " + drafts.read(KoomaDraftStore.FAVORITES).size()
+            + " • ne déclenchent aucun nettoyage.", 13, SUBTLE, false), 12);
 
         android.content.SharedPreferences prefs = getSharedPreferences("kooma_planning_draft", MODE_PRIVATE);
         if (prefs.contains("time")) {
@@ -396,7 +405,153 @@ public final class KoomaHomeActivity extends Activity {
         open.setOnClickListener(v -> openExistingControls());
         add(contents, advanced, 13);
 
-        add(contents, text("KOOMA-I 4.7 · Interface expérimentale\nLes fonctions non encore vérifiées sur le robot sont indiquées comme telles.", 12, SUBTLE, false), 20);
+        add(contents, text("KOOMA-I 4.8 · Interface expérimentale\nFavoris et zones = brouillons locaux non transmis au robot.", 12, SUBTLE, false), 20);
+    }
+
+    private static final int[] DRAFT_COLORS = {
+        0xFF08BF96, 0xFF568BAC, 0xFFE6A44D, 0xFF9A7BC3, 0xFFB78E73
+    };
+    private static final int[] DRAFT_PALE = {
+        0xFFF0FAF6, 0xFFF0F6FA, 0xFFFFF8EC, 0xFFF8F3FB, 0xFFFAF4F0
+    };
+
+    private void showDraftCards(String category) {
+        boolean favorites = KoomaDraftStore.FAVORITES.equals(category);
+        java.util.List<KoomaDraftStore.Draft> list = drafts.read(category);
+        LinearLayout section = card();
+        LinearLayout header = new LinearLayout(this);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        TextView name = text(favorites ? "Mes favoris" : "Mes zones", 18, INK, true);
+        header.addView(name, new LinearLayout.LayoutParams(0, -2, 1f));
+        TextView count = text(list.size() + "/" + KoomaDraftStore.LIMIT, 12, SUBTLE, false);
+        header.addView(count);
+        add(section, header, 0);
+
+        add(section, text(favorites
+            ? "Prépare des routines personnelles. Aucun favori n'est exécutable sur le robot pour le moment."
+            : "Étiquettes de zones uniquement : pas de coordonnées, de délimitation sur la carte ni d'interdiction transmise au robot.",
+            12, SUBTLE, false), 7);
+
+        if (list.isEmpty()) {
+            add(section, text(favorites
+                ? "Aucun favori créé. Tu peux préparer « Après le petit-déjeuner », « Nettoyage rapide », etc."
+                : "Aucune zone définie. Ajoute un nom de pièce ou une zone à éviter comme brouillon.",
+                13, SUBTLE, false), 15);
+        } else {
+            for (int i = 0; i < list.size(); i++) {
+                final int index = i;
+                KoomaDraftStore.Draft draft = list.get(i);
+                int colorIdx = draft.color;
+                LinearLayout tile = vertical(13);
+                tile.setBackground(outlined(DRAFT_PALE[colorIdx], 17, LINE));
+                LinearLayout line = new LinearLayout(this);
+                line.setGravity(Gravity.CENTER_VERTICAL);
+                TextView marker = text(favorites ? "★" : "⌖", 23, DRAFT_COLORS[colorIdx], true);
+                line.addView(marker, new LinearLayout.LayoutParams(dp(34), dp(42)));
+                LinearLayout detail = vertical(0);
+                detail.setPadding(0, 0, 0, 0);
+                add(detail, text(draft.name, 16, INK, true), 0);
+                add(detail, text(draft.detail, 12, SUBTLE, false), 4);
+                line.addView(detail, new LinearLayout.LayoutParams(0, -2, 1f));
+                tile.addView(line);
+                add(tile, text("Brouillon local • non exécuté", 11, DARK_GREEN, true), 6);
+                LinearLayout row = new LinearLayout(this);
+                Button edit = button("Modifier", false);
+                edit.setTextSize(12);
+                Button delete = button("Supprimer", false);
+                delete.setTextSize(12);
+                LinearLayout.LayoutParams l = new LinearLayout.LayoutParams(0, dp(48), 1f);
+                l.rightMargin = dp(4);
+                row.addView(edit, l);
+                LinearLayout.LayoutParams r = new LinearLayout.LayoutParams(0, dp(48), 1f);
+                r.leftMargin = dp(4);
+                row.addView(delete, r);
+                add(tile, row, 9);
+                edit.setOnClickListener(v -> editDraft(category, index, draft));
+                delete.setOnClickListener(v -> confirmDeleteDraft(category, index, draft.name));
+                add(section, tile, 12);
+            }
+        }
+        Button addDraft = button(favorites ? "+ Créer un favori" : "+ Ajouter une zone", true);
+        addDraft.setEnabled(list.size() < KoomaDraftStore.LIMIT);
+        add(section, addDraft, 15);
+        addDraft.setOnClickListener(v -> editDraft(category, -1, null));
+        add(contents, section, 16);
+    }
+
+    private void confirmDeleteDraft(String category, int index, String name) {
+        new AlertDialog.Builder(this)
+            .setTitle("Supprimer ce brouillon ?")
+            .setMessage("« " + name + " » sera supprimé du téléphone. Aucune action n'est envoyée au robot.")
+            .setNegativeButton("Annuler", null)
+            .setPositiveButton("Supprimer", (d, w) -> {
+                if (!drafts.delete(category, index))
+                    android.widget.Toast.makeText(this, "Suppression impossible", android.widget.Toast.LENGTH_SHORT).show();
+                selectTab(KoomaDraftStore.FAVORITES.equals(category) ? 2 : 0);
+            }).show();
+    }
+
+    private void editDraft(String category, int index, KoomaDraftStore.Draft previous) {
+        boolean favorite = KoomaDraftStore.FAVORITES.equals(category);
+        LinearLayout form = vertical(18);
+        add(form, text(favorite
+            ? "Favori de présentation uniquement : aucune commande ne sera envoyée au N1 Max."
+            : "Une zone ici est un nom de brouillon. Elle ne désigne aucune surface réelle sur une carte.",
+            13, SUBTLE, false), 0);
+
+        EditText title = new EditText(this);
+        title.setSingleLine(true);
+        title.setTextSize(17);
+        title.setHint(favorite ? "Nom : Après le dîner" : "Nom : Cuisine");
+        title.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(35)});
+        if (previous != null) title.setText(previous.name);
+        add(form, title, 12);
+
+        String[] options = favorite
+            ? new String[]{"Nettoyage partout (brouillon)", "Zones à définir (brouillon)"}
+            : new String[]{"Zone à nettoyer (étiquette)", "Zone à éviter (étiquette)"};
+        Spinner scope = new Spinner(this);
+        scope.setAdapter(new ArrayAdapter<>(this,
+            android.R.layout.simple_spinner_dropdown_item, options));
+        if (previous != null) {
+            for (int i = 0; i < options.length; i++)
+                if (options[i].equals(previous.detail)) scope.setSelection(i);
+        }
+        add(form, scope, 12);
+
+        String[] colorOptions = {"Vert", "Bleu", "Orange", "Violet", "Sable"};
+        Spinner colors = new Spinner(this);
+        colors.setAdapter(new ArrayAdapter<>(this,
+            android.R.layout.simple_spinner_dropdown_item, colorOptions));
+        if (previous != null) colors.setSelection(previous.color);
+        add(form, colors, 9);
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+            .setTitle(index < 0 ? (favorite ? "Nouveau favori" : "Nouvelle zone")
+                               : "Modifier le brouillon")
+            .setView(form)
+            .setNegativeButton("Annuler", null)
+            .setPositiveButton("Enregistrer", null)
+            .create();
+        dialog.setOnShowListener(v -> dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+            .setOnClickListener(clicked -> {
+                try {
+                    KoomaDraftStore.Draft next = new KoomaDraftStore.Draft(
+                        title.getText().toString(), options[scope.getSelectedItemPosition()],
+                        colors.getSelectedItemPosition());
+                    boolean saved = index < 0 ? drafts.add(category, next)
+                        : drafts.replace(category, index, next);
+                    if (!saved) {
+                        title.setError("Enregistrement impossible ou limite atteinte");
+                        return;
+                    }
+                    dialog.dismiss();
+                    selectTab(favorite ? 2 : 0);
+                } catch (IllegalArgumentException problem) {
+                    title.setError(problem.getMessage());
+                }
+            }));
+        dialog.show();
     }
 
     /** An original stylized robot illustration, no product imagery or robot status implied. */
