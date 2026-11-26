@@ -49,6 +49,18 @@ public final class KoomaHomeActivity extends Activity {
     private String lastCheck = "Touchez « Lire l'état » pour interroger le robot.";
     private boolean checking;
     private boolean destroyed;
+    private long lastReadElapsed;
+    private final android.os.Handler handler = new android.os.Handler(android.os.Looper.getMainLooper());
+    private final Runnable expireStatus = () -> {
+        if (destroyed || checking || lastReadElapsed <= 0) return;
+        if (android.os.SystemClock.elapsedRealtime() - lastReadElapsed >= 60000) {
+            robotState = "Lecture expirée";
+            robotBattery = "—";
+            lastCheck = "Dernière lecture expirée : appuie sur « Lire l'état » pour actualiser.";
+            lastReadElapsed = 0;
+            if (selectedTab == 2) selectTab(2);
+        }
+    };
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -271,6 +283,7 @@ public final class KoomaHomeActivity extends Activity {
                 info = failure instanceof IllegalStateException ? failure.getMessage()
                     : "Connexion non établie. Vérifie le Wi-Fi du N1 Max puis réessaie.";
             }
+            final boolean succeeded = !state.equals("Lecture impossible");
             final String stateText = state, batteryText = battery, detail = info;
             runOnUiThread(() -> {
                 if (destroyed) return;
@@ -278,6 +291,11 @@ public final class KoomaHomeActivity extends Activity {
                 robotBattery = batteryText;
                 lastCheck = detail;
                 checking = false;
+                handler.removeCallbacks(expireStatus);
+                if (succeeded) {
+                    lastReadElapsed = android.os.SystemClock.elapsedRealtime();
+                    handler.postDelayed(expireStatus, 60000);
+                } else lastReadElapsed = 0;
                 if (selectedTab == 2) selectTab(2);
             });
         });
@@ -298,7 +316,9 @@ public final class KoomaHomeActivity extends Activity {
         LinearLayout mapCard = card();
         add(mapCard, text("Explorateur de carte", 18, INK, true), 0);
         View preview = new MapIllustration(this);
-        add(mapCard, preview, 15);
+        LinearLayout.LayoutParams mapPreviewParams = new LinearLayout.LayoutParams(-1, dp(220));
+        mapPreviewParams.topMargin = dp(15);
+        mapCard.addView(preview, mapPreviewParams);
         add(mapCard, text("Zoom, rotation, palettes, analyse des cellules et import local de cartes JSON ou TXT.", 13, SUBTLE, false), 12);
         Button open = button("Ouvrir la cartographie", true);
         add(mapCard, open, 13);
@@ -445,8 +465,14 @@ public final class KoomaHomeActivity extends Activity {
         }
     }
 
+    @Override protected void onResume() {
+        super.onResume();
+        expireStatus.run();
+    }
+
     @Override protected void onDestroy() {
         destroyed = true;
+        handler.removeCallbacks(expireStatus);
         work.shutdownNow();
         super.onDestroy();
     }
