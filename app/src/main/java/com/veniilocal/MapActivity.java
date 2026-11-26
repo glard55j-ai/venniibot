@@ -152,6 +152,7 @@ public final class MapActivity extends Activity {
 
     private void setActiveGrid(byte[] cells, int width, int height) {
         activeCells = cells;
+        mapView.setZoom(1f);
         activeWidth = width;
         activeHeight = height;
         turns = 0;
@@ -435,48 +436,124 @@ public final class MapActivity extends Activity {
     private final class MapPreviewView extends View {
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private Bitmap previewBitmap;
+        private MapGridRasterizer.Preview preview;
+        private final RectF destination = new RectF();
+        private float zoom = 1f, offsetX, offsetY, lastX, lastY, downX, downY;
+        private boolean dragged;
+
         MapPreviewView() {
             super(MapActivity.this);
             setContentDescription("Carte fictive en attente d'une grille importée");
         }
-        void setPreview(MapGridRasterizer.Preview preview) {
-            previewBitmap = preview == null ? null
-                : Bitmap.createBitmap(preview.argb, preview.width, preview.height, Bitmap.Config.ARGB_8888);
-            setContentDescription(preview == null
+
+        void setPreview(MapGridRasterizer.Preview data) {
+            preview = data;
+            previewBitmap = data == null ? null
+                : Bitmap.createBitmap(data.argb, data.width, data.height, Bitmap.Config.ARGB_8888);
+            offsetX = offsetY = 0;
+            if (data == null) zoom = 1f;
+            setContentDescription(data == null
                 ? "Carte fictive de démonstration"
-                : "Grille de valeurs brutes en niveaux de gris, murs et orientation inconnus");
+                : "Grille brute en niveaux de gris ou palette expérimentale. Utilisez les boutons pour le zoom.");
             invalidate();
         }
+
+        void setZoom(float target) {
+            zoom = Math.max(1f, Math.min(4f, target));
+            if (zoom <= 1f) offsetX = offsetY = 0;
+            invalidate();
+        }
+
+        @Override public boolean performClick() {
+            super.performClick();
+            return true;
+        }
+
+        @Override public boolean onTouchEvent(MotionEvent event) {
+            if (previewBitmap == null || preview == null) return super.onTouchEvent(event);
+            float x = event.getX(), y = event.getY();
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    downX = lastX = x;
+                    downY = lastY = y;
+                    dragged = false;
+                    if (zoom > 1f) getParent().requestDisallowInterceptTouchEvent(true);
+                    return true;
+                case MotionEvent.ACTION_MOVE:
+                    if (Math.abs(x - downX) > dp(7) || Math.abs(y - downY) > dp(7))
+                        dragged = true;
+                    if (zoom > 1f && dragged) {
+                        float scale = Math.min((getWidth() - dp(12)) / (float) previewBitmap.getWidth(),
+                                               (getHeight() - dp(12)) / (float) previewBitmap.getHeight());
+                        float pictureW = previewBitmap.getWidth() * scale * zoom;
+                        float pictureH = previewBitmap.getHeight() * scale * zoom;
+                        float maxPanX = Math.max(0f, (pictureW - getWidth()) / 2f + dp(15));
+                        float maxPanY = Math.max(0f, (pictureH - getHeight()) / 2f + dp(15));
+                        offsetX = Math.max(-maxPanX, Math.min(maxPanX, offsetX + x - lastX));
+                        offsetY = Math.max(-maxPanY, Math.min(maxPanY, offsetY + y - lastY));
+                        invalidate();
+                    }
+                    lastX = x; lastY = y;
+                    return true;
+                case MotionEvent.ACTION_UP:
+                    if (!dragged && destination.contains(x, y)) {
+                        int pixelX = Math.min(preview.width - 1,
+                            (int)((x - destination.left) * preview.width / destination.width()));
+                        int pixelY = Math.min(preview.height - 1,
+                            (int)((y - destination.top) * preview.height / destination.height()));
+                        MapGridRasterizer.Sample sample = preview.sample(activeCells, pixelX, pixelY);
+                        if (sample != null && cellLabel != null)
+                            cellLabel.setText("Cellule brute x=" + sample.x + ", y=" + sample.y
+                                + " (origine 0) • valeur = " + sample.value
+                                + ". Aucune interprétation mur/sol.");
+                        performClick();
+                    }
+                    getParent().requestDisallowInterceptTouchEvent(false);
+                    return true;
+                case MotionEvent.ACTION_CANCEL:
+                    getParent().requestDisallowInterceptTouchEvent(false);
+                    return true;
+                default:
+                    return super.onTouchEvent(event);
+            }
+        }
+
         @Override protected void onDraw(Canvas c) {
             super.onDraw(c);
             c.drawColor(Color.rgb(21, 37, 55));
             if (previewBitmap != null) {
-                float scale = Math.min((getWidth()-dp(12))/(float)previewBitmap.getWidth(),
-                                       (getHeight()-dp(12))/(float)previewBitmap.getHeight());
-                float w = previewBitmap.getWidth() * scale, h = previewBitmap.getHeight() * scale;
-                RectF rect = new RectF((getWidth()-w)/2f, (getHeight()-h)/2f,
-                                       (getWidth()+w)/2f, (getHeight()+h)/2f);
+                float scale = Math.min((getWidth() - dp(12)) / (float) previewBitmap.getWidth(),
+                                       (getHeight() - dp(12)) / (float) previewBitmap.getHeight());
+                float drawW = previewBitmap.getWidth() * scale * zoom;
+                float drawH = previewBitmap.getHeight() * scale * zoom;
+                destination.set((getWidth() - drawW) / 2f + offsetX,
+                                (getHeight() - drawH) / 2f + offsetY,
+                                (getWidth() + drawW) / 2f + offsetX,
+                                (getHeight() + drawH) / 2f + offsetY);
+                c.save();
+                c.clipRect(0, 0, getWidth(), getHeight());
                 paint.setFilterBitmap(false);
-                c.drawBitmap(previewBitmap, null, rect, paint);
+                c.drawBitmap(previewBitmap, null, destination, paint);
+                c.restore();
                 return;
             }
-            float scale = Math.min(getWidth()/320f, getHeight()/400f);
+            float scale = Math.min(getWidth() / 320f, getHeight() / 400f);
             c.save();
-            c.translate((getWidth()-320*scale)/2f, (getHeight()-400*scale)/2f);
-            c.scale(scale,scale);
-            paint.setColor(Color.rgb(72,102,120));
-            c.drawRect(35,38,279,352,paint);
-            paint.setColor(Color.rgb(21,37,55));
-            c.drawRect(44,48,270,343,paint);
-            paint.setColor(Color.rgb(90,135,149));
-            c.drawRect(44,190,270,199,paint);
-            c.drawRect(170,48,179,190,paint);
-            c.drawRect(125,199,134,343,paint);
-            paint.setColor(Color.rgb(59,220,177));
-            c.drawCircle(91,265,10,paint);
+            c.translate((getWidth() - 320 * scale) / 2f, (getHeight() - 400 * scale) / 2f);
+            c.scale(scale, scale);
+            paint.setColor(Color.rgb(72, 102, 120));
+            c.drawRect(35, 38, 279, 352, paint);
+            paint.setColor(Color.rgb(21, 37, 55));
+            c.drawRect(44, 48, 270, 343, paint);
+            paint.setColor(Color.rgb(90, 135, 149));
+            c.drawRect(44, 190, 270, 199, paint);
+            c.drawRect(170, 48, 179, 190, paint);
+            c.drawRect(125, 199, 134, 343, paint);
+            paint.setColor(Color.rgb(59, 220, 177));
+            c.drawCircle(91, 265, 10, paint);
             paint.setColor(Color.WHITE);
             paint.setTextSize(15f);
-            c.drawText("CARTE FICTIVE",90,22,paint);
+            c.drawText("CARTE FICTIVE", 90, 22, paint);
             c.restore();
         }
     }
