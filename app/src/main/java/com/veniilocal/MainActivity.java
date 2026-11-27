@@ -22,7 +22,7 @@ import java.net.SocketTimeoutException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/** Non-official, locally controlled UI. No cloud, account or analytics. Only demo preferences are saved locally. */
+/** Local robot control and diagnostics, no simulations or cloud. */
 public final class MainActivity extends Activity {
     private static final int BG = Color.rgb(9, 19, 32);
     private static final int CARD = Color.rgb(21, 37, 55);
@@ -32,9 +32,8 @@ public final class MainActivity extends Activity {
     private static final int WARNING = Color.rgb(255, 191, 106);
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private Button btnConnect, btnStart, btnPause, btnResume, btnDock;
-    private CheckBox repaired, demoMode;
-    private TextView connection, state, power, suction, volume, issue, note, telemetrySummary, dashboardMode, dashboardState, dashboardBattery, dashboardBatteryHint, historyView, diagnostic, demoStatus;
-    private View robotPreview, settingsPanel, manualPanel;
+    private CheckBox repaired;
+    private TextView connection, state, power, suction, volume, issue, note, telemetrySummary, dashboardMode, dashboardState, dashboardBattery, dashboardBatteryHint, historyView, diagnostic;
     private android.widget.ProgressBar batteryProgress;
     private TextView dashboardReadTime, connectionDetail;
     private VeniiClient.Status lastReport;
@@ -55,24 +54,6 @@ public final class MainActivity extends Activity {
     private static final int STATE_EXPORT_REQUEST = 261;
     private String pendingStateExport;
     private String lastReportTime = "Jamais", lastAttempt = "Aucune tentative réelle", lastCommand = "Aucune commande réelle", lastBefore = "—", lastAfter = "—";
-    private DemoMap demoMap;
-    private TextView elapsedLabel;
-    private long elapsedBefore = 0, startedAt = 0;
-    private boolean timerRunning = false;
-    private final Runnable demoTick = new Runnable() {
-        public void run() {
-            if (!timerRunning) return;
-            updateElapsed();
-            if (demoMap != null) demoMap.autoStep();
-            handler.postDelayed(this, 1000);
-        }
-    };
-    private TextView settingsSummary, scheduleLabel;
-    private android.widget.Spinner aspirationChoice, waterChoice, cleaningChoice;
-    private android.widget.SeekBar volumeChoice;
-    private CheckBox scheduleEnabled;
-    private int scheduleHour = 9, scheduleMinute = 0;
-    private android.animation.ObjectAnimator demoAnimation;
     private final java.util.ArrayDeque<String> history = new java.util.ArrayDeque<>();
     private volatile boolean working = false;
     private boolean hasStatus = false;
@@ -168,269 +149,12 @@ public final class MainActivity extends Activity {
         historyView.setText(android.text.TextUtils.join("\n\n", history));
     }
 
-    private void stopDemoAnimation() {
-        if (demoAnimation != null) { demoAnimation.cancel(); demoAnimation = null; }
-        if (robotPreview != null) robotPreview.setTranslationX(0f);
-    }
-
-    private void showDemoMotion(int code, String label) {
-        stopDemoAnimation();
-        demoStatus.setText("Simulation : " + label);
-        if (code == 1020 || code == 1070 || code == 1050) {
-            demoAnimation = android.animation.ObjectAnimator.ofFloat(robotPreview, "translationX", -dp(34), dp(34));
-            demoAnimation.setDuration(code == 1050 ? 1100 : 1700);
-            demoAnimation.setRepeatMode(android.animation.ValueAnimator.REVERSE);
-            demoAnimation.setRepeatCount(android.animation.ValueAnimator.INFINITE);
-            demoAnimation.start();
-        }
-    }
-
-    private View vacuumPreview() {
-        View view = new View(this) {
-            private final android.graphics.Paint paint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
-            @Override protected void onDraw(android.graphics.Canvas canvas) {
-                super.onDraw(canvas);
-                float x = getWidth()/2f, y = getHeight()/2f, r = dp(27);
-                paint.setColor(Color.rgb(5, 13, 22));
-                canvas.drawOval(x-r, y+r-4, x+r, y+r+dp(7), paint);
-                paint.setColor(Color.rgb(208, 225, 233));
-                canvas.drawCircle(x,y,r,paint);
-                paint.setColor(Color.rgb(38,60,80));
-                canvas.drawCircle(x,y,r-dp(4),paint);
-                paint.setColor(ACCENT);
-                canvas.drawCircle(x,y-dp(10),dp(6),paint);
-                paint.setColor(MUTED);
-                canvas.drawRoundRect(x-dp(12),y+dp(7),x+dp(12),y+dp(13),dp(3),dp(3),paint);
-            }
-        };
-        view.setContentDescription("Illustration du robot en démonstration");
-        view.setLayoutParams(new LinearLayout.LayoutParams(-1, dp(76)));
-        return view;
-    }
-
-    private android.widget.Spinner demoChoice(LinearLayout panel, String label, String[] options) {
-        add(panel, text(label, 13, MUTED, true), 12);
-        android.widget.Spinner spinner = new android.widget.Spinner(this);
-        android.widget.ArrayAdapter<String> adapter = new android.widget.ArrayAdapter<String>(this, android.R.layout.simple_spinner_item, options) {
-            @Override public View getView(int position, View convertView, android.view.ViewGroup parent) {
-                View view = super.getView(position, convertView, parent);
-                if (view instanceof TextView) ((TextView)view).setTextColor(PRIMARY);
-                return view;
-            }
-        };
-        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-        spinner.setAdapter(adapter);
-        spinner.setBackgroundTintList(android.content.res.ColorStateList.valueOf(ACCENT));
-        spinner.setPadding(dp(8), dp(8), dp(8), dp(8));
-        add(panel, spinner, 3);
-        return spinner;
-    }
-
-    private String scheduledTime() {
-        return String.format(java.util.Locale.FRANCE, "%02d:%02d", scheduleHour, scheduleMinute);
-    }
-
-    private void updateScheduleLabel() {
-        scheduleLabel.setText("Horaire fictif : " + scheduledTime() + " • " + (scheduleEnabled.isChecked() ? "activé en démo" : "désactivé"));
-    }
-
-    private LinearLayout buildDemoSettings() {
-        LinearLayout section = column(14, CARD);
-        add(section, text("RÉGLAGES EXPÉRIMENTAUX", 12, ACCENT, true), 0);
-        add(section, text("DÉMO UNIQUEMENT • options illustratives, non validées sur le N1 Max. Aucun réglage transmis au robot.", 13, WARNING, true), 8);
-        aspirationChoice = demoChoice(section, "Puissance d’aspiration", new String[]{"Silencieux", "Standard", "Fort", "Maximum"});
-        aspirationChoice.setSelection(Math.max(0,Math.min(3,demoPrefs().getInt("aspiration",1))));
-        waterChoice = demoChoice(section, "Débit d’eau", new String[]{"Sans eau", "Faible", "Moyen", "Élevé"});
-        cleaningChoice = demoChoice(section, "Mode de nettoyage", new String[]{"Automatique", "Zone ciblée", "Bordures", "Lavage"});
-        waterChoice.setSelection(Math.max(0,Math.min(3,demoPrefs().getInt("water",0))));
-        cleaningChoice.setSelection(Math.max(0,Math.min(3,demoPrefs().getInt("cleaning",0))));
-        int savedVolume = Math.max(0,Math.min(100,demoPrefs().getInt("volume",50)));
-        TextView volumeLabel = text("Volume simulé : " + savedVolume + " %", 13, MUTED, true);
-        add(section, volumeLabel, 12);
-        volumeChoice = new android.widget.SeekBar(this);
-        volumeChoice.setMax(100);
-        volumeChoice.setProgress(savedVolume);
-        volumeChoice.setProgressTintList(android.content.res.ColorStateList.valueOf(ACCENT));
-        volumeChoice.setThumbTintList(android.content.res.ColorStateList.valueOf(ACCENT));
-        add(section, volumeChoice, 5);
-        volumeChoice.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener() {
-            public void onProgressChanged(android.widget.SeekBar bar, int value, boolean fromUser) { volumeLabel.setText("Volume simulé : " + value + " %"); }
-            public void onStartTrackingTouch(android.widget.SeekBar bar) {}
-            public void onStopTrackingTouch(android.widget.SeekBar bar) {}
-        });
-        scheduleEnabled = new CheckBox(this);
-        scheduleEnabled.setText("Programmer un nettoyage fictif");
-        scheduleEnabled.setTextColor(PRIMARY);
-        scheduleEnabled.setButtonTintList(android.content.res.ColorStateList.valueOf(ACCENT));
-        scheduleHour = Math.max(0,Math.min(23,demoPrefs().getInt("hour",9)));
-        scheduleMinute = Math.max(0,Math.min(59,demoPrefs().getInt("minute",0)));
-        scheduleEnabled.setChecked(demoPrefs().getBoolean("schedule_demo",false));
-        add(section, scheduleEnabled, 12);
-        scheduleLabel = text("", 13, MUTED, false);
-        add(section, scheduleLabel, 5);
-        updateScheduleLabel();
-        scheduleEnabled.setOnCheckedChangeListener((b, checked) -> updateScheduleLabel());
-        Button time = button("Choisir une heure", Color.rgb(38,60,80), PRIMARY);
-        add(section, time, 8);
-        time.setOnClickListener(v -> {
-            if (!demoMode.isChecked()) return;
-            new android.app.TimePickerDialog(this, (picker, hour, minute) -> {
-                scheduleHour = hour;
-                scheduleMinute = minute;
-                updateScheduleLabel();
-            }, scheduleHour, scheduleMinute, true).show();
-        });
-        add(section, text("Aucune alarme ni tâche automatique n’est créée. Les choix appliqués sont sauvegardés uniquement sur ce téléphone.", 12, MUTED, false), 8);
-        Button apply = button("Appliquer en démonstration", ACCENT, BG);
-        add(section, apply, 12);
-        settingsSummary = text("Aucun réglage de démonstration appliqué.", 13, MUTED, false);
-        add(section, settingsSummary, 8);
-        apply.setOnClickListener(v -> {
-            if (!demoMode.isChecked() || working) return;
-            String summary = "Aspiration : " + aspirationChoice.getSelectedItem()
-                + " • Eau : " + waterChoice.getSelectedItem()
-                + " • Mode : " + cleaningChoice.getSelectedItem()
-                + " • Volume : " + volumeChoice.getProgress() + " %"
-                + " • Horaire fictif : " + (scheduleEnabled.isChecked() ? scheduledTime() : "désactivé");
-            saveDemoPreferences();
-            settingsSummary.setText("DÉMO : " + summary + " • préférences enregistrées");
-            activity("DÉMO : réglages appliqués localement. " + summary + ". Aucun ordre envoyé.");
-        });
-        return section;
-    }
-
-    private android.content.SharedPreferences demoPrefs() {
-        return getSharedPreferences("demo_preferences", MODE_PRIVATE);
-    }
-
-    private void saveDemoPreferences() {
-        demoPrefs().edit()
-            .putInt("aspiration", aspirationChoice.getSelectedItemPosition())
-            .putInt("water", waterChoice.getSelectedItemPosition())
-            .putInt("cleaning", cleaningChoice.getSelectedItemPosition())
-            .putInt("volume", volumeChoice.getProgress())
-            .putInt("hour", scheduleHour).putInt("minute", scheduleMinute)
-            .putBoolean("schedule_demo", scheduleEnabled.isChecked()).apply();
-    }
-
-    private void updateElapsed() {
-        if (elapsedLabel == null) return;
-        long seconds = (elapsedBefore + (timerRunning ? android.os.SystemClock.elapsedRealtime() - startedAt : 0)) / 1000;
-        elapsedLabel.setText(String.format(java.util.Locale.FRANCE, "%02d:%02d", seconds / 60, seconds % 60));
-    }
-
-    private void startDemoTimer(boolean reset) {
-        pauseDemoTimer();
-        if (reset) elapsedBefore = 0;
-        startedAt = android.os.SystemClock.elapsedRealtime();
-        timerRunning = true;
-        handler.post(demoTick);
-    }
-
-    private void pauseDemoTimer() {
-        if (timerRunning) elapsedBefore += android.os.SystemClock.elapsedRealtime() - startedAt;
-        timerRunning = false;
-        handler.removeCallbacks(demoTick);
-        updateElapsed();
-    }
-
-    private final class DemoMap extends View {
-        private final android.graphics.Paint p = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
-        private final boolean[][] visited = new boolean[6][8];
-        private int x = 1, y = 1, direction = 1;
-        DemoMap() { super(MainActivity.this); visited[y][x] = true; setContentDescription("Carte fictive de démonstration, sans données du robot"); }
-        void step(int dx, int dy) {
-            x = Math.max(0, Math.min(7, x + dx)); y = Math.max(0, Math.min(5, y + dy));
-            visited[y][x] = true; invalidate();
-        }
-        void autoStep() {
-            if ((direction > 0 && x == 7) || (direction < 0 && x == 0)) {
-                if (y == 5) { y = 0; } else { y++; }
-                direction = -direction; visited[y][x] = true; invalidate();
-            } else step(direction, 0);
-        }
-        void reset() {
-            for (boolean[] row : visited) java.util.Arrays.fill(row, false);
-            x = 1; y = 1; direction = 1; visited[y][x] = true; invalidate();
-        }
-        @Override protected void onDraw(android.graphics.Canvas c) {
-            super.onDraw(c);
-            float pad = dp(8), cw = (getWidth()-2*pad)/8f, ch = (getHeight()-2*pad)/6f;
-            for (int iy=0; iy<6; iy++) for (int ix=0; ix<8; ix++) {
-                p.setColor(visited[iy][ix] ? Color.rgb(30,112,100) : Color.rgb(38,60,80));
-                c.drawRoundRect(pad+ix*cw+2,pad+iy*ch+2,pad+(ix+1)*cw-2,pad+(iy+1)*ch-2,dp(4),dp(4),p);
-            }
-            float cx=pad+(x+.5f)*cw, cy=pad+(y+.5f)*ch;
-            p.setColor(PRIMARY); c.drawCircle(cx,cy,Math.min(cw,ch)*.34f,p);
-            p.setColor(ACCENT); c.drawCircle(cx,cy,Math.min(cw,ch)*.19f,p);
-        }
-    }
-
-    private void manualStep(int dx, int dy, String label) {
-        if (!demoMode.isChecked() || working) return;
-        pauseDemoTimer();
-        stopDemoAnimation();
-        demoMap.step(dx,dy);
-        demoStatus.setText("Simulation : " + label);
-        activity("DÉMO : direction " + label + " • carte fictive uniquement.");
-    }
-
-    private LinearLayout buildManualPanel() {
-        LinearLayout section = column(14, CARD);
-        add(section, text("TÉLÉCOMMANDE ET CARTE", 12, ACCENT, true), 0);
-        add(section, text("DÉMO UNIQUEMENT • carte fictive, aucun mouvement réel.", 13, WARNING, true), 8);
-        elapsedLabel = text("00:00", 30, PRIMARY, true);
-        elapsedLabel.setGravity(Gravity.CENTER);
-        add(section, elapsedLabel, 8);
-        TextView caption = text("Temps de nettoyage simulé", 12, MUTED, false);
-        caption.setGravity(Gravity.CENTER);
-        add(section, caption, 0);
-        demoMap = new DemoMap();
-        LinearLayout.LayoutParams mp = new LinearLayout.LayoutParams(-1,dp(170));
-        mp.topMargin = dp(10);
-        section.addView(demoMap,mp);
-        Button up = button("↑  Avancer", Color.rgb(38,60,80), PRIMARY);
-        add(section, up, 8);
-        up.setOnClickListener(v -> manualStep(0,-1,"Avancer"));
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        Button left = button("←", Color.rgb(38,60,80), PRIMARY);
-        Button stop = button("STOP", Color.rgb(155,46,57), PRIMARY);
-        Button right = button("→", Color.rgb(38,60,80), PRIMARY);
-        for (Button b : new Button[]{left,stop,right}) {
-            LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(0,-2,1f);
-            bp.setMargins(dp(3),0,dp(3),0); row.addView(b,bp);
-        }
-        left.setContentDescription("Gauche"); right.setContentDescription("Droite");
-        add(section,row,8);
-        left.setOnClickListener(v -> manualStep(-1,0,"Gauche"));
-        right.setOnClickListener(v -> manualStep(1,0,"Droite"));
-        stop.setOnClickListener(v -> {
-            if (!demoMode.isChecked()) return;
-            pauseDemoTimer(); stopDemoAnimation();
-            demoStatus.setText("Simulation : STOP");
-            activity("DÉMO : STOP simulé • aucun ordre réel.");
-        });
-        Button down = button("↓  Reculer", Color.rgb(38,60,80), PRIMARY);
-        add(section,down,8);
-        down.setOnClickListener(v -> manualStep(0,1,"Reculer"));
-        Button reset = button("Réinitialiser la carte et le temps", Color.rgb(38,60,80), PRIMARY);
-        add(section,reset,8);
-        reset.setOnClickListener(v -> {
-            if (!demoMode.isChecked()) return;
-            pauseDemoTimer(); stopDemoAnimation(); elapsedBefore=0; updateElapsed(); demoMap.reset();
-            demoStatus.setText("Simulation : en attente");
-            activity("DÉMO : carte et chronomètre réinitialisés.");
-        });
-        return section;
-    }
-
     private String diagnosticReport() {
         StringBuilder r = new StringBuilder();
         r.append("KOOMA-I • v").append(appVersion()).append("\n");
         r.append("Rapport local • ").append(new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss Z", java.util.Locale.FRANCE).format(new java.util.Date())).append("\n");
         r.append("Android : ").append(android.os.Build.VERSION.SDK_INT).append("\n");
-        r.append("Mode : ").append(demoMode.isChecked() ? "DÉMONSTRATION" : "RÉEL").append("\n");
+        r.append("Mode : CONTRÔLE RÉEL (sans simulation)\n");
         r.append("Dernière tentative réelle : ").append(lastAttempt).append("\n");
         r.append("Dernière lecture réelle : ").append(lastReportTime).append("\n");
         r.append("Fraîcheur : ").append(freshStatus() ? "récente" : "absente ou expirée").append("\n");
@@ -577,16 +301,16 @@ public final class MainActivity extends Activity {
         add(main, text("KOOMA-I  •  v" + appVersion(), 14, ACCENT, true), 0);
         add(main, text("N1 Max", 34, PRIMARY, true), 5);
         add(main, text("Lecture locale, sans Internet", 14, MUTED, false), 4);
-        Button mapButton = button("Cartographie expérimentale (démo)", CARD, PRIMARY);
+        Button mapButton = button("Cartographie LiDAR", CARD, PRIMARY);
         mapButton.setOnClickListener(v -> startActivity(new Intent(this, MapActivity.class)));
         add(main, mapButton, 12);
 
         LinearLayout dashboard = column(18, CARD);
         add(main, dashboard, 20);
         add(dashboard, text("TABLEAU DE BORD", 12, ACCENT, true), 0);
-        dashboardMode = text("MODE COMMANDES : DÉMONSTRATION • aucun ordre réel", 13, ACCENT, true);
+        dashboardMode = text("COMMANDES RÉELLES • lecture de sécurité obligatoire", 13, ACCENT, true);
         add(dashboard, dashboardMode, 9);
-        add(dashboard, text("DONNÉES DU ROBOT : dernière lecture réelle, distincte de la simulation. Lecture récente seulement après actualisation.", 12, MUTED, false), 8);
+        add(dashboard, text("État du robot uniquement après lecture réelle ; commandes sécurisées par un état récent.", 12, MUTED, false), 8);
         LinearLayout tiles = new LinearLayout(this);
         tiles.setOrientation(LinearLayout.HORIZONTAL);
         LinearLayout batteryTile = column(12, Color.rgb(38, 60, 80));
@@ -615,11 +339,6 @@ public final class MainActivity extends Activity {
         add(dashboard, tiles, 14);
         add(dashboard, text("Les valeurs réelles sont affichées uniquement après lecture du robot.", 12, MUTED, false), 12);
 
-        robotPreview = vacuumPreview();
-        dashboard.addView(robotPreview);
-        demoStatus = text("Simulation : en attente", 12, MUTED, false);
-        demoStatus.setGravity(Gravity.CENTER);
-        add(dashboard, demoStatus, 0);
         Button quick = button("Accéder aux commandes", Color.rgb(38,60,80), PRIMARY);
         add(dashboard, quick, 10);
 
@@ -669,34 +388,9 @@ public final class MainActivity extends Activity {
         add(main, controls, 12);
         quick.setOnClickListener(v -> scroll.smoothScrollTo(0, controls.getTop()));
         add(controls, text("COMMANDES", 12, ACCENT, true), 0);
-        demoMode = new CheckBox(this);
-        demoMode.setText("Mode démonstration (aucun ordre envoyé)");
-        demoMode.setTextColor(PRIMARY);
-        demoMode.setTextSize(14);
-        demoMode.setButtonTintList(android.content.res.ColorStateList.valueOf(ACCENT));
-        demoMode.setChecked(true);
-        add(controls, demoMode, 10);
-        demoMode.setOnCheckedChangeListener((b, checked) -> {
-            stopDemoAnimation();
-            robotPreview.setVisibility(checked ? View.VISIBLE : View.GONE);
-            demoStatus.setVisibility(checked ? View.VISIBLE : View.GONE);
-            demoStatus.setText("Simulation : en attente");
-            pauseDemoTimer();
-            elapsedBefore = 0; updateElapsed();
-            if (demoMap != null) demoMap.reset();
-            if (manualPanel != null) manualPanel.setVisibility(checked ? View.VISIBLE : View.GONE);
-            if (settingsPanel != null) settingsPanel.setVisibility(checked ? View.VISIBLE : View.GONE);
-            invalidateStatus("Lecture nécessaire");
-            repaired.setChecked(false);
-            dashboardMode.setText(checked ? "MODE COMMANDES : DÉMONSTRATION • aucun ordre réel" : "MODE COMMANDES : RÉEL • commandes directes");
-            dashboardMode.setTextColor(checked ? ACCENT : WARNING);
-            connection.setText(checked ? "Simulation activée • état réel non actualisé" : "Mode réel • nouvelle lecture nécessaire");
-            activity(checked ? "Démo : appuyez sur les boutons pour simuler." : "Réel : connectez-vous au Wi-Fi VENII et relisez l’état avant de commander.");
-            enableButtons();
-        });
         btnStart = button("Démarrer  ·  1020", ACCENT, BG);
         add(controls, btnStart, 14);
-        btnStart.setOnClickListener(v -> { if (demoMode.isChecked()) simulate(1020, "Démarrer"); else sendStart(); });
+        btnStart.setOnClickListener(v -> requestRealCommand(1020, "Démarrer le nettoyage"));
         btnPause = button("Pause  ·  1060", Color.rgb(38, 60, 80), PRIMARY);
         LinearLayout pair = new LinearLayout(this);
         pair.setOrientation(LinearLayout.HORIZONTAL);
@@ -704,21 +398,14 @@ public final class MainActivity extends Activity {
         pauseParams.rightMargin = dp(8);
         pair.addView(btnPause, pauseParams);
         add(controls, pair, 8);
-        btnPause.setOnClickListener(v -> { if (demoMode.isChecked()) simulate(1060, "Pause"); else sendUnverified(1060, "Pause"); });
+        btnPause.setOnClickListener(v -> requestRealCommand(1060, "Mettre en pause"));
         btnResume = button("Reprendre  ·  1070", Color.rgb(38, 60, 80), PRIMARY);
         pair.addView(btnResume, new LinearLayout.LayoutParams(0, -2, 1f));
-        btnResume.setOnClickListener(v -> { if (demoMode.isChecked()) simulate(1070, "Reprendre"); else sendUnverified(1070, "Reprendre"); });
+        btnResume.setOnClickListener(v -> requestRealCommand(1070, "Reprendre le nettoyage"));
         btnDock = button("Retour à la base  ·  1050", Color.rgb(38, 60, 80), PRIMARY);
         add(controls, btnDock, 9);
-        btnDock.setOnClickListener(v -> { if (demoMode.isChecked()) simulate(1050, "Retour à la base"); else sendUnverified(1050, "Retour à la base"); });
+        btnDock.setOnClickListener(v -> requestRealCommand(1050, "Retour à la base"));
         add(controls, text("Les codes 1020, 1060, 1070 et 1050 ont répondu lors des essais physiques du 26/11/2026. Un appui envoie toujours un seul ordre ; restez près du robot et de son bouton physique.", 12, MUTED, false), 12);
-
-        LinearLayout manual = buildManualPanel();
-        manualPanel = manual;
-        add(main, manual, 12);
-        LinearLayout settings = buildDemoSettings();
-        settingsPanel = settings;
-        add(main, settings, 12);
 
         LinearLayout logs = column(18, CARD);
         add(main, logs, 12);
@@ -745,8 +432,8 @@ public final class MainActivity extends Activity {
                 stopMonitor("Observation arrêtée manuellement.");
                 return;
             }
-            if (demoMode.isChecked() || working) {
-                monitorStatus.setText("Désactivez la démo et terminez toute commande avant d’observer.");
+            if (working) {
+                monitorStatus.setText("Terminez la commande en cours avant d’observer.");
                 return;
             }
             monitorActive = true;
@@ -782,11 +469,11 @@ public final class MainActivity extends Activity {
         Button reportButton = button("Afficher / copier le rapport", ACCENT, BG);
         add(diag, reportButton, 8);
         reportButton.setOnClickListener(v -> showDiagnosticReport());
-        add(diag, text("Le rapport sépare les essais réels de la simulation et exclut les jetons et identifiants réseau. Partage manuel uniquement.", 12, MUTED, false), 8);
+        add(diag, text("Le rapport ne concerne que les essais réels, sans jetons ni identifiants réseau. Partage manuel uniquement.", 12, MUTED, false), 8);
         LinearLayout lidar = column(14, CARD);
         add(main, lidar, 12);
         add(lidar, text("LIDAR • CARTOGRAPHIE EXPÉRIMENTALE", 12, ACCENT, true), 0);
-        add(lidar, text("Écoute en lecture seule de 15 s ou 45 s après authentification et demande d’état 888. Aucun ordre LiDAR ni déplacement. À effectuer près du robot, hors démo.", 12, MUTED, false), 8);
+        add(lidar, text("Écoute en lecture seule de 15 s ou 45 s après authentification et demande d’état 888. Aucun ordre LiDAR ni déplacement. À effectuer près du robot.", 12, MUTED, false), 8);
         lidarStatus = text("Aucune écoute réelle effectuée • carte indisponible", 13, PRIMARY, false);
         add(lidar, lidarStatus, 10);
         lidarListen = button("Écoute rapide • 15 secondes", ACCENT, BG);
@@ -808,21 +495,6 @@ public final class MainActivity extends Activity {
         LinearLayout changes = column(18, CARD);
         add(main, changes, 16);
         add(changes, text("VERSION " + appVersion(), 12, ACCENT, true), 0);
-        add(changes, text("3.2 • Messages de connexion simplifiés, données expirées atténuées, export lisible heure + état.", 13, PRIMARY, false), 8);
-        add(changes, text("3.1 • Séparation claire du mode démo et des lectures réelles, indicateur de lecture expirée, export manuel TXT des transitions.", 13, PRIMARY, false), 8);
-        add(changes, text("3.0 • Jauge de batterie estimée, heure de dernière lecture et statut de fraîcheur de connexion.", 13, PRIMARY, false), 8);
-        add(changes, text("2.9 • Affichage lisible des états 2, 3, 4, 11 et 12 sur la base des essais réels. Codes bruts conservés.", 13, PRIMARY, false), 8);
-        add(changes, text("2.8 • Historique horodaté des transitions et observation volontaire en lecture seule pendant 5 minutes.", 13, PRIMARY, false), 8);
-        add(changes, text("2.7 • Indicateur de batterie estimé (60), états 11/12 provisoires, valeurs brutes conservées.", 13, PRIMARY, false), 8);
-        add(changes, text("2.6 • Écoute cartographie/LiDAR en lecture seule, codes et tailles, export brut volontaire.", 13, PRIMARY, false), 8);
-        add(changes, text("2.5.2 • Nouveau nom KOOMA-I dans Android et dans l’application.", 13, PRIMARY, false), 8);
-        add(changes, text("2.5.1 • Nouvelle icône KOOMA-I.", 13, PRIMARY, false), 8);
-        add(changes, text("2.5 • Rapport de diagnostic copiable, états avant/après et résultat de la dernière tentative réelle.", 13, PRIMARY, false), 8);
-        add(changes, text("2.4 • Carte et télécommande fictives, chronomètre, préférences démo locales.", 13, PRIMARY, false), 8);
-        add(changes, text("2.3 • Réglages de démonstration : aspiration, eau, mode, volume et horaire fictif.", 13, PRIMARY, false), 8);
-        add(changes, text("2.2 • Historique horodaté, animation démo, accès rapide et diagnostic local.", 13, PRIMARY, false), 8);
-        add(changes, text("2.1 • Tableau de bord, version visible, contrôle de fraîcheur des données.", 13, PRIMARY, false), 8);
-        add(changes, text("2.0 • Commandes directes sans confirmation, mode démo et lecture d’état.", 12, MUTED, false), 6);
         add(main, text("Prototype indépendant • Aucun jeton stocké • Aucun serveur externe", 12, MUTED, false), 20);
         enableButtons();
     }
@@ -837,10 +509,7 @@ public final class MainActivity extends Activity {
         if (dashboardReadTime != null)
             dashboardReadTime.setText("Dernière lecture : " +
                 ("Jamais".equals(lastReportTime) ? "aucune" : lastReportTime + " • expirée"));
-        if (connectionDetail != null) connectionDetail.setText(
-            demoMode != null && demoMode.isChecked()
-                ? "Mode démo • données réelles non actualisées"
-                : "Lecture non actualisée • relire l’état");
+        if (connectionDetail != null) connectionDetail.setText("Lecture non actualisée • relire l’état");
         if (telemetrySummary != null) telemetrySummary.setText("Données non actualisées • relire l’état");
         if (diagnostic != null) diagnostic.setText(message + " • données à actualiser.");
     }
@@ -851,15 +520,15 @@ public final class MainActivity extends Activity {
 
     private void enableButtons() {
         btnConnect.setEnabled(!working && !monitorActive);
-        if (lidarListen != null) lidarListen.setEnabled(!working && !monitorActive && !demoMode.isChecked());
-        if (lidarListenLong != null) lidarListenLong.setEnabled(!working && !monitorActive && !demoMode.isChecked());
+        if (lidarListen != null) lidarListen.setEnabled(!working && !monitorActive);
+        if (lidarListenLong != null) lidarListenLong.setEnabled(!working && !monitorActive);
         if (lidarCopy != null) lidarCopy.setEnabled(!working && lidarReport != null);
         if (lidarOpenMap != null) lidarOpenMap.setEnabled(
                 !working && lidarReport != null && lidarReport.hasPayload());
         if (lidarRaw != null) lidarRaw.setEnabled(!working && lidarReport != null && lidarReport.hasPayload());
-        demoMode.setEnabled(!working && !monitorActive);
         repaired.setEnabled(!working && !monitorActive);
-        boolean ready = !working && !monitorActive && (demoMode.isChecked() || (freshStatus() && repaired.isChecked()));
+        // Buttons stay clickable while idle: missing prerequisites are explained on tap.
+        boolean ready = !working && !monitorActive;
         btnStart.setEnabled(ready);
         btnPause.setEnabled(ready);
         btnResume.setEnabled(ready);
@@ -925,9 +594,7 @@ public final class MainActivity extends Activity {
         batteryProgress.setProgress(0);
         dashboardBatteryHint.setText("Code 60 non interprétable");
         dashboardReadTime.setText("Lu à " + clock() + " • valide 60 s");
-        connectionDetail.setText(demoMode.isChecked()
-            ? "Mode démo • dernière réponse réelle reçue, commandes simulées"
-            : "Mode réel • réponse reçue du robot • lecture récente");
+        connectionDetail.setText("Réponse réelle du robot reçue • lecture récente");
         try {
             int level = Integer.parseInt(report.powerReport.trim());
             if (level >= 0 && level <= 100) {
@@ -950,7 +617,7 @@ public final class MainActivity extends Activity {
     }
 
     private void listenLidar(int seconds) {
-        if (working || monitorActive || demoMode.isChecked() || (seconds != 15 && seconds != 45)) return;
+        if (working || monitorActive || (seconds != 15 && seconds != 45)) return;
         lidarReport = null;
         lidarStatus.setText("Écoute en cours (" + seconds + " s) • aucun ordre de mouvement");
         invalidateStatus("Diagnostic LiDAR • relire l’état ensuite");
@@ -1060,8 +727,43 @@ public final class MainActivity extends Activity {
         });
     }
 
+    /** Real commands are user-triggered, with a fresh state and a physical-safety check. */
+    private void requestRealCommand(int code, String label) {
+        if (working || monitorActive) {
+            new android.app.AlertDialog.Builder(this).setTitle("Robot occupé")
+                .setMessage("Attends la fin de la commande ou du diagnostic en cours.")
+                .setPositiveButton("OK", null).show();
+            return;
+        }
+        if (!freshStatus()) {
+            new android.app.AlertDialog.Builder(this).setTitle("État réel nécessaire")
+                .setMessage("La lecture est absente ou expirée. Actualise l'état avant d'envoyer une commande.")
+                .setNegativeButton("Annuler", null)
+                .setPositiveButton("Lire l'état", (d,w) -> refresh()).show();
+            return;
+        }
+        if (!repaired.isChecked()) {
+            new android.app.AlertDialog.Builder(this).setTitle("Sécurité nécessaire")
+                .setMessage("Vérifie les capteurs, le pare-chocs et les escaliers, puis coche la case Sécurité.")
+                .setPositiveButton("Compris", null).show();
+            return;
+        }
+        new android.app.AlertDialog.Builder(this).setTitle("Envoyer au robot ?")
+            .setMessage(label + " (" + code + ") sera envoyé une seule fois au N1 Max. "
+                + "Reste près du bouton physique : l'envoi ne garantit pas l'exécution.")
+            .setNegativeButton("Annuler", null)
+            .setPositiveButton("Envoyer", (d,w) -> {
+                if (!freshStatus() || !repaired.isChecked() || working || monitorActive) {
+                    activity("Commande annulée : état expiré ou sécurité non confirmée.");
+                    return;
+                }
+                if (code == 1020) sendStart();
+                else sendUnverified(code, label);
+            }).show();
+    }
+
     private void sendStart() {
-        if (working || demoMode.isChecked() || !repaired.isChecked() || !freshStatus()) return;
+        if (working || monitorActive || !repaired.isChecked() || !freshStatus()) return;
         lastCommand = "1020 • tentative, résultat non confirmé"; lastBefore = "—"; lastAfter = "—";
         execute("Authentification et état de sécurité, puis un seul ordre 1020…", () -> {
             VeniiClient.StartResult result = VeniiClient.startOnce();
@@ -1086,17 +788,8 @@ public final class MainActivity extends Activity {
     }
 
 
-    private void simulate(int code, String label) {
-        showDemoMotion(code, label);
-        if (code == 1020) { demoMap.reset(); startDemoTimer(true); }
-        else if (code == 1070) startDemoTimer(false);
-        else pauseDemoTimer();
-        activity("DÉMO : " + label + " (" + code + ") simulé. Aucune commande envoyée.");
-        connection.setText("Mode démo • commande " + code + " simulée");
-    }
-
     private void sendUnverified(int code, String label) {
-        if (working || !freshStatus() || !repaired.isChecked() || demoMode.isChecked()) return;
+        if (working || monitorActive || !freshStatus() || !repaired.isChecked()) return;
         lastCommand = code + " • tentative, résultat non confirmé"; lastBefore = "—"; lastAfter = "—";
         execute("Envoi local de " + label + " (" + code + ")…", () -> {
             VeniiClient.StartResult result = VeniiClient.commandOnce(code);
@@ -1121,15 +814,11 @@ public final class MainActivity extends Activity {
 
     @Override protected void onStop() {
         stopMonitor("Observation arrêtée : application en arrière-plan.");
-        pauseDemoTimer();
-        stopDemoAnimation();
         super.onStop();
     }
 
     @Override protected void onDestroy() {
         stopMonitor("Observation arrêtée.");
-        pauseDemoTimer();
-        stopDemoAnimation();
         handler.removeCallbacks(expireStatus);
         io.shutdownNow();
         super.onDestroy();
