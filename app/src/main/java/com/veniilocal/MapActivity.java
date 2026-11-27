@@ -21,7 +21,6 @@ import android.widget.TextView;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.util.Base64;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import org.json.JSONObject;
@@ -153,10 +152,8 @@ public final class MapActivity extends Activity {
         importTxtButton = button(importPanel, "Analyser un export LiDAR TXT");
         importTxtButton.setOnClickListener(v ->
             openDocument(REQUEST_TXT, new String[]{"text/plain"}));
-        Button synthetic = button(importPanel, "Voir une grille de démonstration");
-        synthetic.setOnClickListener(v -> showSyntheticExample());
         Button reset = button(importPanel, "Effacer l'aperçu");
-        reset.setOnClickListener(v -> showDemo());
+        reset.setOnClickListener(v -> clearPreview());
 
         LinearLayout zoneCard = panel(root, 15);
         add(zoneCard, label("Zones de nettoyage", 18, TEXT, true), 0);
@@ -349,7 +346,7 @@ public final class MapActivity extends Activity {
     private void updateModeLabel() {
         if (modeLabel == null || mapView == null) return;
         if (activeCells == null) {
-            modeLabel.setText("Aperçu fictif • aucun octet réel");
+            modeLabel.setText("Aucune carte chargée • zoom 1×");
             return;
         }
         String palette = paletteMode == 0 ? "Gris brut" : paletteMode == 1
@@ -586,35 +583,12 @@ public final class MapActivity extends Activity {
         importMapButton.setEnabled(true);
     }
 
-    private void showDemo() {
+    private void clearPreview() {
         setActiveGrid(null, 0, 0);
-        heading.setText("DÉMONSTRATION — carte fictive");
-        metadata.setText("Aucune carte réelle décodée. L'orientation et la signification des octets restent inconnues.");
-        importResult.setText("Démonstration seulement : aucun fichier lu ni ordre envoyé au robot.");
-        statistics.setText("Statistiques : en attente d’une grille décodée.");
-    }
-
-    private void showSyntheticExample() {
-        // Deliberately builds an original small synthetic LZ4 literal-only block.
-        int width = 16, height = 12;
-        byte[] input = new byte[width * height];
-        for (int y = 0; y < height; y++) {
-            for (int x = 0; x < width; x++) {
-                input[y * width + x] = (byte)((x * 16 + y * 8) & 255);
-            }
-        }
-        byte[] packed = new byte[input.length + 2];
-        packed[0] = (byte)0xF0;
-        packed[1] = (byte)(input.length - 15);
-        System.arraycopy(input, 0, packed, 2, input.length);
-        byte[] decoded = MapGridDecoder.decodeBase64Lz4(
-                Base64.getEncoder().encodeToString(packed), width, height);
-        MapGridRasterizer.Preview preview = MapGridRasterizer.rasterize(decoded, width, height, 600);
-        setActiveGrid(decoded, width, height);
-        heading.setText("EXEMPLE SYNTHÉTIQUE — aucun robot");
-        metadata.setText("16 × 12 octets artificiels ; aperçu des nuances de gris, sans murs ni pièces.");
-        statistics.setText(MapGridStatistics.summarize(decoded, 8));
-        importResult.setText("Test du décodage Base64/LZ4 exécuté sur des données inventées. Ce n'est PAS la carte de ton domicile.");
+        heading.setText("AUCUNE CARTE CHARGÉE");
+        metadata.setText("Aucune grille réelle disponible. Importez un fichier LiDAR provenant du robot.");
+        importResult.setText("Aucun fichier chargé. Aucun ordre envoyé au robot.");
+        statistics.setText("Statistiques : aucune grille chargée.");
     }
 
     private int dp(int value) {
@@ -635,7 +609,7 @@ public final class MapActivity extends Activity {
 
         MapPreviewView() {
             super(MapActivity.this);
-            setContentDescription("Carte fictive en attente d'une grille importée");
+            setContentDescription("Aucune grille cartographique importée");
         }
 
         void setPreview(MapGridRasterizer.Preview data) {
@@ -645,7 +619,7 @@ public final class MapActivity extends Activity {
             offsetX = offsetY = 0;
             if (data == null) zoom = 1f;
             setContentDescription(data == null
-                ? "Carte fictive de démonstration"
+                ? "Aucune carte chargée"
                 : "Grille brute en niveaux de gris ou palette expérimentale. Utilisez les boutons pour le zoom.");
             invalidate();
         }
@@ -753,7 +727,7 @@ public final class MapActivity extends Activity {
             paint.setTypeface(Typeface.DEFAULT);
             paint.setColor(MUTED);
             paint.setTextSize(dp(12));
-            String help = "Importez une grille ou testez la démo";
+            String help = "Importez un fichier LiDAR local";
             c.drawText(help, cx - paint.measureText(help) / 2f, cy + dp(94), paint);
         }
     }
