@@ -52,13 +52,17 @@ public final class KoomaHomeActivity extends Activity {
     private String robotBattery = "—";
     private String lastCheck = "Touchez « Lire l'état » pour interroger le robot.";
     private boolean checking;
+    private boolean sendingCommand;
     private boolean destroyed;
+    private boolean lastStatusValid;
+    private android.widget.CheckBox safetyCheck;
     private long lastReadElapsed;
     private final android.os.Handler handler = new android.os.Handler(android.os.Looper.getMainLooper());
     private final Runnable expireStatus = () -> {
         if (destroyed || checking || lastReadElapsed <= 0) return;
         if (android.os.SystemClock.elapsedRealtime() - lastReadElapsed >= 60000) {
             robotState = "Lecture expirée";
+            lastStatusValid = false;
             robotBattery = "—";
             lastCheck = "Dernière lecture expirée : appuie sur « Lire l'état » pour actualiser.";
             lastReadElapsed = 0;
@@ -229,64 +233,173 @@ public final class KoomaHomeActivity extends Activity {
     }
 
     private void showRobot() {
-        sectionTitle("Bienvenue à la maison", "Ton robot, ses commandes et ses données au même endroit.");
+        sectionTitle("Mon Veniibot N1 Max", "Commandes réelles • connexion locale");
 
         RobotPicture robot = new RobotPicture(this);
-        LinearLayout.LayoutParams picture = new LinearLayout.LayoutParams(-1, dp(260));
-        picture.topMargin = dp(9);
+        LinearLayout.LayoutParams picture = new LinearLayout.LayoutParams(-1, dp(164));
+        picture.topMargin = dp(3);
         contents.addView(robot, picture);
 
-        TextView robotName = text("Mon Veniibot N1 Max", 21, INK, true);
-        robotName.setGravity(Gravity.CENTER);
-        add(contents, robotName, 1);
-        TextView status = text("État : " + robotState, 15, DARK_GREEN, true);
-        status.setGravity(Gravity.CENTER);
-        add(contents, status, 7);
-        TextView battery = text("Batterie : " + robotBattery, 14, SUBTLE, false);
-        battery.setGravity(Gravity.CENTER);
-        add(contents, battery, 4);
-
-        LinearLayout actions = card();
-        add(actions, text("Connexion locale", 17, INK, true), 0);
-        add(actions, text(lastCheck, 13, SUBTLE, false), 7);
-        Button read = button(checking ? "Lecture en cours…" : "Lire l'état du robot", true);
-        read.setEnabled(!checking);
-        add(actions, read, 14);
+        LinearLayout summary = card();
+        add(summary, text("État : " + robotState, 17, DARK_GREEN, true), 0);
+        add(summary, text("Batterie estimée : " + robotBattery, 14, SUBTLE, false), 6);
+        add(summary, text(lastCheck, 12, SUBTLE, false), 8);
+        Button read = button(checking ? "Lecture en cours…" : "Actualiser l'état du robot", true);
+        read.setEnabled(!checking && !sendingCommand);
+        add(summary, read, 12);
         read.setOnClickListener(v -> readRobotStatus());
-        Button commands = button("Connexion et commandes de nettoyage", false);
-        add(actions, commands, 9);
-        commands.setOnClickListener(v -> openExistingControls());
-        add(contents, actions, 20);
-        showDraftCards(KoomaDraftStore.FAVORITES);
+        add(contents, summary, 12);
 
-        add(contents, text("Les commandes réelles de démarrage, pause, reprise et retour à la base restent dans l'écran de contrôle existant, avec leurs protections de sécurité.", 12, SUBTLE, false), 13);
+        LinearLayout control = card();
+        add(control, text("Contrôler mon robot", 18, INK, true), 0);
+        add(control, text("Boutons réels : 1020 démarrer, 1060 pause, 1070 reprendre, 1050 retour à la base. "
+            + "Un ordre est transmis uniquement après lecture récente, contrôle de sécurité et confirmation.",
+            12, SUBTLE, false), 8);
+
+        safetyCheck = new android.widget.CheckBox(this);
+        safetyCheck.setText("J'ai vérifié le pare-chocs, les capteurs, les escaliers et dégagé le sol.");
+        safetyCheck.setTextColor(INK);
+        safetyCheck.setTextSize(13);
+        safetyCheck.setButtonTintList(android.content.res.ColorStateList.valueOf(GREEN));
+        add(control, safetyCheck, 12);
+
+        Button start = button("▶ Démarrer le nettoyage", true);
+        start.setEnabled(!sendingCommand);
+        add(control, start, 11);
+        start.setOnClickListener(v -> requestHomeCommand(1020, "Démarrer le nettoyage"));
+
+        LinearLayout pair = new LinearLayout(this);
+        pair.setOrientation(LinearLayout.HORIZONTAL);
+        Button pause = button("Ⅱ Pause", false);
+        Button resume = button("▶ Reprendre", false);
+        LinearLayout.LayoutParams half = new LinearLayout.LayoutParams(0, dp(58), 1f);
+        half.rightMargin = dp(5);
+        pair.addView(pause, half);
+        LinearLayout.LayoutParams otherHalf = new LinearLayout.LayoutParams(0, dp(58), 1f);
+        otherHalf.leftMargin = dp(5);
+        pair.addView(resume, otherHalf);
+        pause.setEnabled(!sendingCommand);
+        resume.setEnabled(!sendingCommand);
+        pause.setOnClickListener(v -> requestHomeCommand(1060, "Mettre en pause"));
+        resume.setOnClickListener(v -> requestHomeCommand(1070, "Reprendre le nettoyage"));
+        add(control, pair, 7);
+
+        Button dock = button("⌂ Retour à la base", false);
+        dock.setEnabled(!sendingCommand);
+        add(control, dock, 9);
+        dock.setOnClickListener(v -> requestHomeCommand(1050, "Retour à la base"));
+
+        Button advanced = button("Diagnostics et réglages avancés", false);
+        add(control, advanced, 13);
+        advanced.setOnClickListener(v -> openExistingControls());
+        add(contents, control, 12);
+
+        showDraftCards(KoomaDraftStore.FAVORITES);
+    }
+
+    private boolean freshRobotState() {
+        return lastStatusValid && lastReadElapsed > 0
+            && android.os.SystemClock.elapsedRealtime() - lastReadElapsed < 60000L;
+    }
+
+    private void requestHomeCommand(int code, String label) {
+        if (sendingCommand || checking) {
+            new AlertDialog.Builder(this).setTitle("Action en cours")
+                .setMessage("Attends la fin de la commande ou de la lecture.")
+                .setPositiveButton("OK", null).show();
+            return;
+        }
+        if (!freshRobotState()) {
+            new AlertDialog.Builder(this).setTitle("Lecture réelle nécessaire")
+                .setMessage("L'état du robot est absent ou expiré. Lis son état avant de commander.")
+                .setNegativeButton("Annuler", null)
+                .setPositiveButton("Lire l'état", (d,w) -> readRobotStatus()).show();
+            return;
+        }
+        if (safetyCheck == null || !safetyCheck.isChecked()) {
+            new AlertDialog.Builder(this).setTitle("Sécurité à confirmer")
+                .setMessage("Vérifie que le robot peut bouger sans risque, puis coche la case de sécurité.")
+                .setPositiveButton("Compris", null).show();
+            return;
+        }
+        new AlertDialog.Builder(this).setTitle("Envoyer la commande réelle ?")
+            .setMessage(label + " (" + code + ") sera transmis une fois au N1 Max, sans simulation. "
+                + "Reste près du bouton physique : un ordre envoyé ne garantit pas son exécution.")
+            .setNegativeButton("Annuler", null)
+            .setPositiveButton("Envoyer", (d,w) -> {
+                if (sendingCommand || checking || !freshRobotState()
+                        || safetyCheck == null || !safetyCheck.isChecked()) return;
+                executeHomeCommand(code, label);
+            }).show();
+    }
+
+    private void executeHomeCommand(int code, String label) {
+        if (sendingCommand) return;
+        sendingCommand = true;
+        lastStatusValid = false;
+        lastReadElapsed = 0L;
+        handler.removeCallbacks(expireStatus);
+        robotState = "Commande en cours";
+        robotBattery = "—";
+        lastCheck = label + " : tentative réelle en cours. Le résultat reste à vérifier.";
+        if (selectedTab == 2) selectTab(2);
+        work.execute(() -> {
+            String feedback;
+            try {
+                bindToRobotWifi();
+                VeniiClient.StartResult result = VeniiClient.commandOnce(code);
+                String before = result.before == null ? "—" : result.before.generalState;
+                String after = result.after == null ? "indisponible" : result.after.generalState;
+                feedback = label + " : commande " + code + " envoyée une fois. État avant : "
+                    + before + ", après : " + after + ". Vérifie physiquement le robot puis relis l'état.";
+            } catch (Exception error) {
+                feedback = label + " : transmission non confirmée. Vérifie le Wi-Fi et l'état du robot "
+                    + "avant de réessayer ; ne suppose pas que l'ordre a échoué.";
+            }
+            final String message = feedback;
+            runOnUiThread(() -> {
+                if (destroyed) return;
+                sendingCommand = false;
+                robotState = "À actualiser";
+                lastCheck = message;
+                if (selectedTab == 2) selectTab(2);
+                new AlertDialog.Builder(this).setTitle("Résultat de la commande")
+                    .setMessage(message).setPositiveButton("OK", null).show();
+            });
+        });
+    }
+
+    private void bindToRobotWifi() {
+        ConnectivityManager cm =
+            (ConnectivityManager)getSystemService(Context.CONNECTIVITY_SERVICE);
+        if (cm == null) throw new IllegalStateException("Wi-Fi non disponible");
+        for (Network network : cm.getAllNetworks()) {
+            NetworkCapabilities caps = cm.getNetworkCapabilities(network);
+            if (caps != null && caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
+                cm.bindProcessToNetwork(network);
+                return;
+            }
+        }
+        throw new IllegalStateException("Connecte le téléphone au Wi-Fi du robot");
     }
 
     private void readRobotStatus() {
-        if (checking) return;
+        if (checking || sendingCommand) return;
         checking = true;
         robotState = "Lecture en cours";
+        lastStatusValid = false;
+        lastReadElapsed = 0L;
         robotBattery = "—";
         lastCheck = "Interrogation locale en cours. Aucune commande de mouvement envoyée.";
         selectTab(2);
         work.execute(() -> {
             String state = "Lecture impossible", battery = "—", info;
+            boolean valid = false;
             try {
-                // The user has explicitly requested this status-only operation.
-                ConnectivityManager cm =
-                    (ConnectivityManager)getSystemService(Context.CONNECTIVITY_SERVICE);
-                boolean wifi = false;
-                if (cm != null) for (Network network : cm.getAllNetworks()) {
-                    NetworkCapabilities caps = cm.getNetworkCapabilities(network);
-                    if (caps != null && caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
-                        cm.bindProcessToNetwork(network);
-                        wifi = true;
-                        break;
-                    }
-                }
-                if (!wifi) throw new IllegalStateException("Connecte le téléphone au Wi-Fi du robot.");
+                bindToRobotWifi();
                 VeniiClient.Status report = VeniiClient.readStatus();
                 state = stateText(report.generalState);
+                valid = report.generalState != null && report.generalState.matches("[0-9]{1,4}");
                 String value = report.powerReport;
                 try {
                     int percent = Integer.parseInt(value);
@@ -297,7 +410,8 @@ public final class KoomaHomeActivity extends Activity {
                 info = failure instanceof IllegalStateException ? failure.getMessage()
                     : "Connexion non établie. Vérifie le Wi-Fi du N1 Max puis réessaie.";
             }
-            final boolean succeeded = !state.equals("Lecture impossible");
+            final boolean succeeded = valid;
+            final boolean rawStatusValid = valid;
             final String stateText = state, batteryText = battery, detail = info;
             runOnUiThread(() -> {
                 if (destroyed) return;
@@ -305,6 +419,7 @@ public final class KoomaHomeActivity extends Activity {
                 robotBattery = batteryText;
                 lastCheck = detail;
                 checking = false;
+                lastStatusValid = rawStatusValid;
                 handler.removeCallbacks(expireStatus);
                 if (succeeded) {
                     lastReadElapsed = android.os.SystemClock.elapsedRealtime();
