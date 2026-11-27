@@ -444,11 +444,16 @@ public final class KoomaHomeActivity extends Activity {
         sectionTitle("Cartographie", "Explore les cartes disponibles et les diagnostics LiDAR.");
         LinearLayout mapCard = card();
         add(mapCard, text("Explorateur de carte", 18, INK, true), 0);
-        View preview = new MapIllustration(this);
-        LinearLayout.LayoutParams mapPreviewParams = new LinearLayout.LayoutParams(-1, dp(220));
-        mapPreviewParams.topMargin = dp(15);
-        mapCard.addView(preview, mapPreviewParams);
-        add(mapCard, text("Zoom, rotation, palettes, analyse des cellules et import local de cartes JSON ou TXT.", 13, SUBTLE, false), 12);
+        LinearLayout emptyMap = vertical(16);
+        emptyMap.setBackground(outlined(PALE, 17, LINE));
+        TextView mapLabel = text("Aucune carte du robot disponible", 16, DARK_GREEN, true);
+        mapLabel.setGravity(Gravity.CENTER);
+        add(emptyMap, mapLabel, 0);
+        TextView mapHelp = text("Pour afficher une carte réelle, il faut recevoir un fichier cartographique du N1 Max.", 13, SUBTLE, false);
+        mapHelp.setGravity(Gravity.CENTER);
+        add(emptyMap, mapHelp, 8);
+        add(mapCard, emptyMap, 15);
+        add(mapCard, text("Importer un diagnostic LiDAR ou des données JSON/TXT depuis le robot. Aucune carte artificielle n'est créée.", 13, SUBTLE, false), 12);
         Button open = button("Ouvrir la cartographie", true);
         add(mapCard, open, 13);
         open.setOnClickListener(v -> openExistingMap());
@@ -713,33 +718,6 @@ public final class KoomaHomeActivity extends Activity {
             c.drawCircle(cx, cy+r*.55f, r*.07f,p);
             p.setColor(GREEN);
             c.drawCircle(cx,cy-r*.71f, r*.06f,p);
-        }
-    }
-
-    /** Explicitly fictional preview: no inferred floor plan or robot position. */
-    private final class MapIllustration extends View {
-        private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
-        MapIllustration(Context context) {super(context);}
-        @Override protected void onDraw(Canvas c) {
-            super.onDraw(c);
-            c.drawColor(PALE);
-            float w=getWidth(),h=getHeight();
-            p.setColor(Color.rgb(211, 233, 225));
-            float px=w*.12f, py=h*.13f, pw=w*.76f, ph=h*.74f;
-            c.drawRoundRect(px,py,px+pw,py+ph,20,20,p);
-            p.setColor(Color.WHITE);
-            c.drawRoundRect(px+dp(8),py+dp(8),px+pw-dp(8),py+ph-dp(8),15,15,p);
-            p.setStyle(Paint.Style.STROKE);
-            p.setColor(GREEN);
-            p.setStrokeWidth(dp(5));
-            c.drawLine(px+pw*.45f,py+dp(10),px+pw*.45f,py+ph*.58f,p);
-            c.drawLine(px+pw*.45f,py+ph*.58f,px+pw-dp(10),py+ph*.58f,p);
-            p.setStyle(Paint.Style.FILL);
-            p.setColor(GREEN);
-            c.drawCircle(px+pw*.25f,py+ph*.62f,dp(10),p);
-            p.setColor(SUBTLE);
-            p.setTextSize(dp(12));
-            c.drawText("APERÇU FICTIF", px+dp(15),py+ph-dp(14),p);
         }
     }
 
